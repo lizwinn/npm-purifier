@@ -10,8 +10,8 @@
 # (tests/conformance-update.sh).
 {
   pkgs,
-  # The flake's default package overlay, which adds the commands and the
-  # builder.
+  # The flake's default package overlay, which adds the scope
+  # `npm-purifier` with the builder and the commands.
   overlay,
   # The shared purifier library.
   purifier,
@@ -24,8 +24,8 @@ let
   withOverlay = pkgs.extend overlay;
 
   # Every fixture builds the way a consumer's package builds a project:
-  # through the builder the overlay adds to the package set.
-  inherit (withOverlay) buildNpmProject;
+  # through the builder in the scope that the overlay adds.
+  inherit (withOverlay.npm-purifier) buildNpmProject;
 
   # One package with a build script, a test script, a command, a
   # dependency and a dev dependency.
@@ -351,13 +351,13 @@ in
   npm-purifier-command = withOverlay.npm-purifier.npm-purifier;
 
   # A package written for callPackage, in an overlay of its own, takes the
-  # builder by name and builds the same package as the fixture.
+  # scope by name and builds the same package as the fixture.
   consumer-package =
     let
       consumers = withOverlay.extend (
         final: prev: {
           hello-consumer = final.callPackage (
-            { buildNpmProject }: (buildNpmProject { src = ./fixtures/app; }).packages.hello-npm
+            { npm-purifier }: (npm-purifier.buildNpmProject { src = ./fixtures/app; }).packages.hello-npm
           ) { };
         }
       );
@@ -365,10 +365,10 @@ in
     evalCheck "consumer-package" (
       consumers.hello-consumer.drvPath == (buildNpmProject { src = ./fixtures/app; })
       .packages.hello-npm.drvPath
-    ) "a package that takes buildNpmProject by name built another derivation";
+    ) "a package that takes the npm-purifier scope by name built another derivation";
 
   # `buildNpmProject.override` replaces what the builder takes from the
-  # package set: here the Node.js its packages run on.
+  # scope and the package set: here the Node.js its packages run on.
   builder-override =
     let
       overridden = (buildNpmProject.override { nodejs = pkgs.nodejs-slim; }) { src = ./fixtures/app; };
@@ -376,6 +376,17 @@ in
     evalCheck "builder-override" (
       map (input: input.name) overridden.packages.hello-npm.buildInputs == [ pkgs.nodejs-slim.name ]
     ) "buildNpmProject.override did not replace the Node.js of the packages";
+
+  # `overrideScope` replaces what everything in the scope shares: here the
+  # Node.js that the builder in the new scope takes.
+  scope-override =
+    let
+      scoped = withOverlay.npm-purifier.overrideScope (_: _: { nodejs = pkgs.nodejs-slim; });
+      built = scoped.buildNpmProject { src = ./fixtures/app; };
+    in
+    evalCheck "scope-override" (
+      map (input: input.name) built.packages.hello-npm.buildInputs == [ pkgs.nodejs-slim.name ]
+    ) "npm-purifier.overrideScope did not replace the Node.js of the builder";
 
   # commander.js builds, and its tests and type checks pass; the package
   # depends on them.

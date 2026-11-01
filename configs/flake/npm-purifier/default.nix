@@ -16,12 +16,13 @@
       inherit (libOverlays) default;
     };
 
-    # The packages are the `default` entry of this flake's package overlay
-    # registry (pkg-overlays/): the package set applies it by default, and
-    # the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`.
+    # The scope `npm-purifier` is the `default` entry of this flake's
+    # package overlay registry (pkg-overlays/): the package set applies it
+    # by default, and the flake exports it as `pkgOverlays` and as the plain
+    # `overlays.default`. The scope also holds the builder, which is not a
+    # package, so the flake exports the derivations of the scope itself.
     nixpkgs = {
-      packages.export.enabled = true;
+      packages.export.enabled = false;
     };
   };
 
@@ -32,7 +33,11 @@
   perSystem =
     { config, pkgs, ... }:
     {
-      packages.default = config.packages.npm-purifier;
+      # The packages are the derivations of the scope: the scope also holds
+      # the builder, which is not one.
+      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.npm-purifier // {
+        default = pkgs.npm-purifier.npm-purifier;
+      };
       devShells.default = pkgs.mkShell {
         packages = [
           config.packages.npm

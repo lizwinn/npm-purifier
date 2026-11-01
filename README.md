@@ -27,8 +27,9 @@ one. The builder and the commands look for them there by default. Add
 `.npm-purifier/` to `.gitignore`: it holds the project's prefetched
 dependencies.
 
-To build the project with Nix, apply the flake's overlay to a package
-set. The overlay adds the builder `buildNpmProject`:
+To build the project with Nix, apply the overlay of the flake to a package
+set. The overlay adds one attribute, the scope `npm-purifier`, which holds
+the builder `buildNpmProject` beside the commands:
 
 ```nix
 {
@@ -42,7 +43,7 @@ set. The overlay adds the builder `buildNpmProject`:
         inherit system;
         overlays = [ npm-purifier.overlays.default ];
       };
-      project = pkgs.buildNpmProject { src = ./.; };
+      project = pkgs.npm-purifier.buildNpmProject { src = ./.; };
     in
     {
       packages.${system} = {
@@ -62,15 +63,16 @@ derivation of its own. `fetches` lists every download as an entry of the
 purifier library, for SBOM, license and vulnerability tools.
 `nix/lib/build-npm-project.nix` documents every argument of the builder.
 
-A package written for `callPackage` takes the builder by name, like any
-other builder of nixpkgs:
+A package written for `callPackage` takes the scope by name:
 
 ```nix
-{ buildNpmProject }: (buildNpmProject { src = ./.; }).packages.my-app
+{ npm-purifier }: (npm-purifier.buildNpmProject { src = ./.; }).packages.my-app
 ```
 
-`buildNpmProject.override` replaces the packages the builder takes from
-the package set, such as the `nodejs` its packages run on.
+`npm-purifier.buildNpmProject.override` replaces the packages the builder
+takes, such as the `nodejs` its packages run on, and
+`npm-purifier.overrideScope` replaces what everything in the scope
+shares.
 
 `npm-purifier.lib.npm-purifier.readLock { src = ./.; }` reads the
 lockfiles without building anything. It returns the downloads as
@@ -270,7 +272,7 @@ and runs the tests in the sandbox:
         inherit system;
         overlays = [ npm-purifier.overlays.default ];
       };
-      project = pkgs.buildNpmProject { src = ./.; };
+      project = pkgs.npm-purifier.buildNpmProject { src = ./.; };
     in
     {
       packages.${system}.default = project.packages.commander;
@@ -302,7 +304,7 @@ it is. The flake takes the source as an input and keeps
         inherit system;
         overlays = [ npm-purifier.overlays.default ];
       };
-      project = pkgs.buildNpmProject {
+      project = pkgs.npm-purifier.buildNpmProject {
         src = http-server;
         lockFile = ./npm-purifier.lock.json;
       };

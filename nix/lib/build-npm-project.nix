@@ -11,12 +11,16 @@
 # Applied to the library of the npm-purifier flake, the file is a package
 # for callPackage: the second argument set is what it takes from the
 # package set, and the result is the builder. The flake's default overlay
-# (`overlays.default`) adds it to the package set as `buildNpmProject`, so
-# a package written for callPackage takes it like any other dependency:
+# (`overlays.default`) adds the scope `npm-purifier` to the package set,
+# and the scope holds the builder as `buildNpmProject`. A package written
+# for callPackage takes the scope by name:
 #
-#   { buildNpmProject }: (buildNpmProject { src = ./.; }).packages.my-app
+#   { npm-purifier }:
+#   (npm-purifier.buildNpmProject { src = ./.; }).packages.my-app
 #
-# and `buildNpmProject.override` replaces what it takes from the set.
+# `npm-purifier.buildNpmProject.override` replaces what the builder takes,
+# and `npm-purifier.overrideScope` replaces what everything in the scope
+# shares.
 #
 # The builder returns
 #

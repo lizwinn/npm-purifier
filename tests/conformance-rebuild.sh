@@ -20,7 +20,7 @@ for attribute in packages.hello-npm release; do
         overlays = [ f.overlays.default ];
       };
     in
-    (pkgs.buildNpmProject { src = $root/tests/fixtures/app; }).$attribute
+    (pkgs.npm-purifier.buildNpmProject { src = $root/tests/fixtures/app; }).$attribute
   "
   nix build --impure --no-link --expr "$expr"
   nix build --impure --no-link --rebuild --expr "$expr"

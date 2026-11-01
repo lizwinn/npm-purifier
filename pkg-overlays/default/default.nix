@@ -1,24 +1,15 @@
 # SPDX-License-Identifier: MIT
 #
-# The default package overlay. It adds the packages of pkgs/ under
-# `pkgs.npm-purifier` (the command `npm-purifier` and the `npm` wrapper),
-# and the builder `pkgs.buildNpmProject` (nix/lib/build-npm-project.nix)
-# beside them, where nixpkgs keeps its own builders, so a package written
-# for callPackage takes it by name. The builder reads lockfiles with the
-# library of this flake. A consumer that lists this flake in `projects`
-# holds the overlay as `npm-purifier/default`, which its package sets
-# apply by default.
+# The default package overlay. It adds one attribute to the package set:
+# the scope `pkgs.npm-purifier`, made with `lib.makeScope`. The scope holds
+# the packages of pkgs/ (`.buildNpmProject`, `.npm-purifier`, `.npm`), so a
+# package written for callPackage takes `{ npm-purifier }:` and the
+# builder as `npm-purifier.buildNpmProject`. `npm-purifier.overrideScope`
+# replaces what everything in the scope shares, and
+# `npm-purifier.buildNpmProject.override` replaces what the builder takes.
+# A consumer that lists this flake in `projects` holds the overlay as
+# `npm-purifier/default`, which its package sets apply by default.
 { closure-lib, ... }:
-let
-  packages = closure-lib.caisson.nixpkgs.mkPackagesOverlay ../../pkgs "npm-purifier";
-in
 {
-  overlay =
-    final: prev:
-    packages final prev
-    // {
-      buildNpmProject = final.callPackage (import ../../nix/lib/build-npm-project.nix {
-        lib = closure-lib;
-      }) { };
-    };
+  overlay = closure-lib.caisson.nixpkgs.mkPackagesOverlay ../../pkgs "npm-purifier";
 }

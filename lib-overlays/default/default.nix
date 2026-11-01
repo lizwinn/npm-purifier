@@ -3,7 +3,8 @@
 # The `npm-purifier` library namespace. It holds `readLock`
 # (nix/lib/read-lock.nix), which reads a project's lockfiles into the lock
 # in memory of the purifier contract. The builder `buildNpmProject` is a
-# package, which the default package overlay adds to the package set.
+# package in the scope `npm-purifier`, which the default package overlay
+# adds to the package set.
 { ... }:
 {
 
