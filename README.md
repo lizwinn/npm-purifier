@@ -117,6 +117,15 @@ than the one at the project root, for the wrapper and for every
 can set it in its development shell to the path it passes the builder as
 `lockFile`.
 
+An external build leaves `package-lock.json` as the project has it. When
+that file leaves out the URL or integrity of entries, the external
+`npm-purifier.lock.json` records them for the Nix build, and npm, which
+reads only `package-lock.json`, cannot install those entries offline. The
+wrapper then stops with `ENOTCACHED` and says so. The offline loop of such
+a project needs the entries completed in `package-lock.json` itself,
+which `npm-purifier lock` does when `npm-purifier.lock.json` lies in the
+project.
+
 ## Editor
 
 Editors and language servers read `node_modules`, which `npm ci` through
@@ -187,7 +196,9 @@ submodule, which live in the repository itself. For a prepared dependency
 it adds the dependency's own lockfile. The commit and the directory in the
 repository come from `resolved`.
 
-A flake can package a project without changing it. The project's
+A flake can package a project without changing it. An external build
+leaves `package-lock.json` untouched, and what it lacks goes into the
+external `npm-purifier.lock.json`. The project's
 `package-lock.json` stays in the tree, and the flake keeps
 `npm-purifier.lock.json` outside it and passes that path to the builder
 as `lockFile`. `npm-purifier lock --lockfile <path>` then leaves the

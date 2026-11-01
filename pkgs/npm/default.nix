@@ -110,7 +110,13 @@ writeShellApplication {
     "$npm" "$@" 2> >(tee "$log" >&2) || status=$?
     wait
     if [ "$status" -ne 0 ] && grep -q ENOTCACHED "$log"; then
-      echo "npm-purifier: npm needs a download that the lockfiles do not name; run \`npm-purifier lock\`" >&2
+      if [ "$(dirname "$lockfile")" = "$root" ]; then
+        echo "npm-purifier: npm needs a download that the lockfiles do not name; run \`npm-purifier lock\`" >&2
+      else
+        # An external npm-purifier.lock.json completes package-lock.json
+        # for the Nix build only; npm reads the project's own file.
+        echo "npm-purifier: npm needs a download that package-lock.json does not name; $lockfile lies outside the project, and its completions serve the Nix build only" >&2
+      fi
     fi
     exit "$status"
   '';
