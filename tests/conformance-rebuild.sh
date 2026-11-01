@@ -15,11 +15,12 @@ for attribute in packages.hello-npm release; do
   expr="
     let
       f = builtins.getFlake \"git+file://$root\";
+      pkgs = import f.inputs.nixpkgs {
+        system = builtins.currentSystem;
+        overlays = [ f.overlays.default ];
+      };
     in
-    (f.lib.npm-purifier.buildNpmProject {
-      pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; };
-      src = $root/tests/fixtures/app;
-    }).$attribute
+    (pkgs.buildNpmProject { src = $root/tests/fixtures/app; }).$attribute
   "
   nix build --impure --no-link --expr "$expr"
   nix build --impure --no-link --rebuild --expr "$expr"

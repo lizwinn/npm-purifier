@@ -25,8 +25,8 @@ Commit `package-lock.json`, and `npm-purifier.lock.json` when the lock
 run writes one. Add `.npm-purifier/` to `.gitignore`: it holds the
 project's prefetched dependencies.
 
-To build the project with Nix, call the builder from the flake's library
-with a package set:
+To build the project with Nix, apply the flake's overlay to a package
+set. The overlay adds the builder `buildNpmProject`:
 
 ```nix
 {
@@ -36,11 +36,11 @@ with a package set:
   outputs = { nixpkgs, npm-purifier, ... }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
-      project = npm-purifier.lib.npm-purifier.buildNpmProject {
-        inherit pkgs;
-        src = ./.;
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ npm-purifier.overlays.default ];
       };
+      project = pkgs.buildNpmProject { src = ./.; };
     in
     {
       packages.${system} = {
@@ -60,12 +60,22 @@ derivation of its own. `fetches` lists every download as an entry of the
 purifier library, for SBOM, license and vulnerability tools.
 `nix/lib/build-npm-project.nix` documents every argument of the builder.
 
+A package written for `callPackage` takes the builder by name, like any
+other builder of nixpkgs:
+
+```nix
+{ buildNpmProject }: (buildNpmProject { src = ./.; }).packages.my-app
+```
+
+`buildNpmProject.override` replaces the packages the builder takes from
+the package set, such as the `nodejs` its packages run on.
+
 `npm-purifier.lib.npm-purifier.readLock { src = ./.; }` reads the
 lockfiles without building anything. It returns the downloads as
 `entries`, the packages as `outputs`, and, in `problems`, each reason the
 lockfiles cannot be used, which is the same shape every purifier returns.
 
-## Everyday loop
+## Development loop
 
 The `npm` wrapper passes every command to npm. The commands that change
 the lockfile (`install`, `update`, `uninstall` and their aliases) resolve
@@ -94,7 +104,7 @@ Nix and runs `npm publish` on that tarball. Further arguments go to
 `npm publish`, so `npm-purifier publish --dry-run` shows what would be
 uploaded. Nothing is packed outside the sandbox.
 
-## Offline work
+## Working offline
 
 `npm-purifier prefetch` builds the npm cache of every locked tarball and
 git dependency in the Nix store, with a garbage-collector root at
@@ -117,7 +127,7 @@ An external build leaves `package-lock.json` as the project has it. When
 that file leaves out the URL or integrity of entries, the external
 `npm-purifier.lock.json` records them for the Nix build, and npm, which
 reads only `package-lock.json`, cannot install those entries offline. The
-wrapper then stops with `ENOTCACHED` and says so. The offline loop of such
+wrapper then stops with `ENOTCACHED` and says so. The development loop of such
 a project needs the entries completed in `package-lock.json` itself,
 which `npm-purifier lock` does when `npm-purifier.lock.json` lies in the
 project.
@@ -130,7 +140,7 @@ An editor that runs npm itself (task runners, script panels) gets the
 wrapper when it starts from the `nix develop` shell, or from a direnv
 `use flake` of a flake whose development shell includes the wrapper.
 
-## Errors and fixes
+## Troubleshooting
 
 The builder checks the lockfiles at evaluation time and stops with a
 message that names the fix. `readLock` lists the same messages in
@@ -148,7 +158,7 @@ message that names the fix. `readLock` lists the same messages in
 | `has merge conflict markers` | an unresolved merge in a lockfile | resolve it, then run `npm-purifier lock` |
 | `seems to be corrupted` (from npm) | a tarball whose content does not match its integrity | check the URL and the integrity in `package-lock.json` |
 
-## Sources supported and refused
+## Supported language repositories
 
 npm-purifier serves these sources:
 
@@ -234,11 +244,11 @@ and runs the tests in the sandbox:
   outputs = { nixpkgs, npm-purifier, ... }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
-      project = npm-purifier.lib.npm-purifier.buildNpmProject {
-        inherit pkgs;
-        src = ./.;
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ npm-purifier.overlays.default ];
       };
+      project = pkgs.buildNpmProject { src = ./.; };
     in
     {
       packages.${system}.default = project.packages.commander;
@@ -266,9 +276,11 @@ it is. The flake takes the source as an input and keeps
   outputs = { nixpkgs, npm-purifier, http-server, ... }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
-      project = npm-purifier.lib.npm-purifier.buildNpmProject {
-        inherit pkgs;
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ npm-purifier.overlays.default ];
+      };
+      project = pkgs.buildNpmProject {
         src = http-server;
         lockFile = ./npm-purifier.lock.json;
       };

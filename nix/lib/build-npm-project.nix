@@ -8,13 +8,15 @@
 # of the project (the root, its workspaces and the local directories it
 # depends on).
 #
-# The flake publishes the builder in its library, as
-# `lib.npm-purifier.buildNpmProject`:
+# Applied to the library of the npm-purifier flake, the file is a package
+# for callPackage: the second argument set is what it takes from the
+# package set, and the result is the builder. The flake's default overlay
+# (`overlays.default`) adds it to the package set as `buildNpmProject`, so
+# a package written for callPackage takes it like any other dependency:
 #
-#   (npm-purifier.lib.npm-purifier.buildNpmProject {
-#     inherit pkgs;
-#     src = ./.;
-#   }).packages.my-app
+#   { buildNpmProject }: (buildNpmProject { src = ./.; }).packages.my-app
+#
+# and `buildNpmProject.override` replaces what it takes from the set.
 #
 # The builder returns
 #
@@ -34,10 +36,23 @@
 #   productionModules the production dependencies (`npm ci --omit=dev`)
 #   interactive       what `npm-purifier prefetch` builds for the `npm`
 #                     wrapper
-{ lib }:
 {
-  # The package set to build with.
-  pkgs,
+  # The library of the npm-purifier flake, with the purifier library and
+  # `npm-purifier.readLock`.
+  lib,
+}:
+{
+  stdenv,
+  runCommand,
+  writeShellScript,
+  writeText,
+  runtimeShell,
+  callPackage,
+  git,
+  nodejs,
+  python3,
+}:
+{
   # The source tree. It holds the project and every local directory the
   # project depends on.
   src,
@@ -56,7 +71,7 @@
   # The Node.js that runs npm and the project's scripts, and that the
   # packages' commands run on. Git dependencies with a prepare script need
   # the Node.js of nixpkgs, whose npm prepares them inside the sandbox.
-  node ? pkgs.nodejs,
+  node ? nodejs,
   # The package scripts that build the project, run in order before the
   # packages are packed. A script the root package defines runs at the
   # root; otherwise it runs in each workspace that defines it.
@@ -69,7 +84,7 @@
   checkFlags ? [ ],
   # Tools the build scripts and the dependencies' install scripts need.
   # Python is there for node-gyp.
-  nativeBuildInputs ? [ pkgs.python3 ],
+  nativeBuildInputs ? [ python3 ],
   # Libraries native addons link against.
   buildInputs ? [ ],
   # Checkouts that replace the fetches of git dependencies, by their
@@ -86,14 +101,6 @@
   srcFilter ? null,
 }:
 let
-  inherit (pkgs)
-    stdenv
-    runCommand
-    writeShellScript
-    runtimeShell
-    git
-    ;
-
   # The lock in memory, which fails evaluation with the problems of the
   # lockfiles.
   lock = lib.purifier.checkLock (
@@ -119,7 +126,7 @@ let
         src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json"
       );
     in
-    pkgs.writeText "package-lock.json" (
+    writeText "package-lock.json" (
       builtins.toJSON (
         packageLock
         // {
@@ -128,7 +135,7 @@ let
       )
     );
 
-  cache = pkgs.callPackage ./cache.nix {
+  cache = callPackage ./cache.nix {
     inherit fetchers gitCheckouts lock;
     inherit (lib) purifier;
   };

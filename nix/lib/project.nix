@@ -7,9 +7,10 @@
 # that holds them all, with the project's directory inside it as
 # `projectDir`.
 {
-  # The library of this flake, with `npm-purifier.buildNpmProject`.
+  # The library of this flake.
   lib,
-  # The package set to build with.
+  # The package set to build with, with the default overlay of this flake,
+  # which adds `buildNpmProject`.
   pkgs,
   packageLock,
   lockFile ? dirOf packageLock + "/npm-purifier.lock.json",
@@ -31,8 +32,8 @@ let
   up = n: path: if n == 0 then path else up (n - 1) (dirOf path);
   rootParts = lib.filter (p: p != "") (lib.splitString "/" (toString projectRoot));
 in
-lib.npm-purifier.buildNpmProject {
-  inherit pkgs lockFile;
+pkgs.buildNpmProject {
+  inherit lockFile;
   src = up depth projectRoot;
   projectDir = lib.concatStringsSep "/" (lib.drop (lib.length rootParts - depth) rootParts);
 }

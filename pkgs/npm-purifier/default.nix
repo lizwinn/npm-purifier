@@ -99,7 +99,10 @@ writeShellApplication {
       in
       import $flake/nix/lib/project.nix {
         inherit (f) lib;
-        pkgs = import f.inputs.nixpkgs { system = \"$system\"; };
+        pkgs = import f.inputs.nixpkgs {
+          system = \"$system\";
+          overlays = [ f.overlays.default ];
+        };
         packageLock = /. + builtins.getEnv \"NPM_PURIFIER_PACKAGE_LOCK\";
         lockFile = /. + builtins.getEnv \"NPM_PURIFIER_LOCKFILE\";
       })"

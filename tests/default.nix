@@ -10,11 +10,12 @@
 # (tests/conformance-update.sh).
 {
   pkgs,
-  # The flake's default package overlay, which adds the commands.
+  # The flake's default package overlay, which adds the commands and the
+  # builder.
   overlay,
   # The shared purifier library.
   purifier,
-  # The library namespace of this flake, with buildNpmProject.
+  # The library namespace of this flake, with readLock.
   npm-purifier,
 }:
 let
@@ -22,9 +23,9 @@ let
 
   withOverlay = pkgs.extend overlay;
 
-  # Every fixture builds the way a consumer's flake builds a project:
-  # through the builder of this flake's library, with a package set.
-  buildNpmProject = args: npm-purifier.buildNpmProject ({ inherit pkgs; } // args);
+  # Every fixture builds the way a consumer's package builds a project:
+  # through the builder the overlay adds to the package set.
+  inherit (withOverlay) buildNpmProject;
 
   # One package with a build script, a test script, a command, a
   # dependency and a dev dependency.
@@ -337,6 +338,33 @@ in
   # The commands build.
   npm = withOverlay.npm-purifier.npm;
   npm-purifier-command = withOverlay.npm-purifier.npm-purifier;
+
+  # A package written for callPackage, in an overlay of its own, takes the
+  # builder by name and builds the same package as the fixture.
+  consumer-package =
+    let
+      consumers = withOverlay.extend (
+        final: prev: {
+          hello-consumer = final.callPackage (
+            { buildNpmProject }: (buildNpmProject { src = ./fixtures/app; }).packages.hello-npm
+          ) { };
+        }
+      );
+    in
+    evalCheck "consumer-package" (
+      consumers.hello-consumer.drvPath == (buildNpmProject { src = ./fixtures/app; })
+      .packages.hello-npm.drvPath
+    ) "a package that takes buildNpmProject by name built another derivation";
+
+  # `buildNpmProject.override` replaces what the builder takes from the
+  # package set: here the Node.js its packages run on.
+  builder-override =
+    let
+      overridden = (buildNpmProject.override { nodejs = pkgs.nodejs-slim; }) { src = ./fixtures/app; };
+    in
+    evalCheck "builder-override" (
+      map (input: input.name) overridden.packages.hello-npm.buildInputs == [ pkgs.nodejs-slim.name ]
+    ) "buildNpmProject.override did not replace the Node.js of the packages";
 
   # commander.js builds, and its tests and type checks pass; the package
   # depends on them.
