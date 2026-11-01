@@ -21,7 +21,8 @@ const {
   needsPreparation,
   incompleteEntries,
   completeLock,
-} = require("./nix-lock.js");
+  withHash,
+} = require("./lock.js");
 
 const sha = "98e8ff1da1a89f93d1397a24d7413ed15421c139";
 
@@ -133,6 +134,15 @@ test("the lock run completes registry entries without a URL or an integrity", ()
   assert.equal(lock.packages["node_modules/a/node_modules/@s/b"].resolved, "https://r/@s/b/-/b-2.0.0.tgz");
   assert.equal(lock.packages["node_modules/a/node_modules/@s/b"].integrity, "sha512-@s/b");
   assert.deepEqual(Object.keys(lock.packages["node_modules/url-join"]), ["version", "resolved", "integrity", "license"]);
+});
+
+test("the lockfile hash covers the text with the hash itself left empty", () => {
+  const text = '{\n  "version": 3,\n  "hash": "",\n  "git": {}\n}\n';
+  const written = withHash(text);
+  const hash = written.match(/"hash": "(sha256-[^"]+)"/)[1];
+  const expected = "sha256-" + require("crypto").createHash("sha256").update(text).digest("base64");
+  assert.equal(hash, expected);
+  assert.equal(written.replace(hash, ""), text);
 });
 
 test("npm prepares a dependency with a preparing script or workspaces", () => {

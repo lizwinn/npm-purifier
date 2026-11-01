@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: MIT
 #
-# Runs every check on x86_64-linux and aarch64-linux: the flake's checks
-# (the fixture builds in the Nix sandbox, the unit tests of the lock run,
-# the refused lockfiles, the publish step and the formatting), their
-# evaluation for every system, the messages of common mistakes, the lock
-# run against the network, and the `npm` wrapper offline.
+# Runs every check on x86_64-linux and aarch64-linux. The job `check` runs
+# the flake's checks (the fixtures and real projects built in the Nix
+# sandbox, the unit tests of the lock run, the refused lockfiles of the
+# purifier contract, the publish step and the formatting), their
+# evaluation for every system, and the messages of common mistakes. The
+# checks of the purifier contract that need the network or Nix itself run
+# as jobs of their own names.
 name: check
 
 on:
@@ -22,7 +24,7 @@ jobs:
       matrix:
         runner: [ubuntu-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
@@ -32,7 +34,18 @@ jobs:
         run: nix flake check --all-systems --no-build
       - name: Messages of common mistakes
         run: tests/errors.sh
-      - name: Lock run
-        run: tests/lock-run.sh
-      - name: Offline npm wrapper
-        run: tests/interactive.sh
+
+  conformance:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        check: [conformance-relock, conformance-rebuild, conformance-offline]
+    name: ${{ matrix.check }} (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: ${{ matrix.check }}
+        run: tests/${{ matrix.check }}.sh

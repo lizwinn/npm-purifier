@@ -7,6 +7,7 @@
 #   tree          the content of npm's cache (`_cacache`): the locked
 #                 tarballs, laid out by the shared purifier library, and
 #                 the archives of git dependencies with their index entries
+#   fetches       the purifier library entries that the cache fetches
 #   environment   shell commands that set up the environment npm runs in:
 #                 the preparation of git dependencies and the git settings
 #                 for cloned ones
@@ -21,8 +22,8 @@
   purifier,
   lockFile,
   purifierLockFile ? dirOf lockFile + "/npm-purifier.lock.json",
-  # Replaces the fetcher of the locked tarballs.
-  fetchurl ? null,
+  # Fetchers that replace those of the purifier library.
+  fetchers ? { },
   # Checkouts that replace the fetches of git dependencies (see git.nix).
   gitCheckouts ? { },
 }:
@@ -43,18 +44,19 @@ let
       name = "npm-purifier-tarballs";
       entries = lock.downloads;
     }
-    // lib.optionalAttrs (fetchurl != null) { inherit fetchurl; }
+    // fetchers
   );
 
   git = callPackage ./git.nix {
     inherit (lock) git;
-    inherit purifier;
+    inherit purifier fetchers;
     checkouts = gitCheckouts;
   };
 in
 {
   inherit lock;
   inherit (git) environment needsGit repositories;
+  fetches = lock.downloads ++ git.entries;
   tree = symlinkJoin {
     name = "npm-purifier-cache";
     paths = [

@@ -25,16 +25,18 @@
     };
   };
 
-  # `nix run github:nix-purifiers/npm-purifier -- ci` runs npm on the
-  # locked tarballs, offline. `nix develop github:nix-purifiers/npm-purifier`
-  # gives a shell where `npm` is that wrapper, with Node.js beside it.
+  # `nix run github:nix-purifiers/npm-purifier -- lock` runs the command
+  # `npm-purifier`. `nix develop github:nix-purifiers/npm-purifier` gives a
+  # shell with that command, the `npm` wrapper of the everyday loop, and
+  # Node.js.
   perSystem =
     { config, pkgs, ... }:
     {
-      packages.default = config.packages.npm;
+      packages.default = config.packages.npm-purifier;
       devShells.default = pkgs.mkShell {
         packages = [
           config.packages.npm
+          config.packages.npm-purifier
           pkgs.nodejs
         ];
       };
@@ -64,7 +66,7 @@
           {
             checks = import ../../../tests {
               inherit pkgs;
-              inherit (lib) purifier;
+              inherit (lib) purifier npm-purifier;
               overlay = self.overlays.default;
             };
             treefmt.programs.nixfmt.enable = true;

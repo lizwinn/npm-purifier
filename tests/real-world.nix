@@ -9,7 +9,7 @@
 #   httpServer  http-server, a command with a tap test suite. Its
 #               package-lock.json leaves the tarball URL and the integrity
 #               of 130 entries out, so the build reads the lockfile that
-#               `npm nix-lock` completed (real-world/http-server), as a
+#               `npm-purifier lock` completed (real-world/http-server), as a
 #               developer of the project would commit it.
 #
 # The sources are fetched at evaluation time with a pinned hash, so the
@@ -29,7 +29,7 @@
       url = "https://github.com/http-party/http-server/archive/0d3b7bb5b6e8a59fd450ae2dca65870009cfcd8b.tar.gz";
       sha256 = "0xv5aa4y47jz6cxjx97q64nwn2zh7ddsyhcda6f2qglxx3iycc7n";
     };
-    lockFile = ./real-world/http-server/package-lock.json;
+    packageLock = ./real-world/http-server/package-lock.json;
     doCheck = true;
     # Two of the test files listen on port 8000; tap runs them one after
     # the other with one job.

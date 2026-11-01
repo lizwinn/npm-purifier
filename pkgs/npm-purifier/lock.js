@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// The lock run of npm-purifier (`npm nix-lock`). package-lock.json names
+// The lock run of npm-purifier (`npm-purifier lock`). package-lock.json names
 // every registry tarball with its integrity, so Nix fetches those from it
 // alone. Some lockfiles leave the URL or the integrity of an entry out,
 // and npm fetches the registry's metadata for it at install time; the run
@@ -8,14 +8,17 @@
 // dependency is the exception: npm skips its integrity and
 // fetches it again from the repository, so this run records what a Nix
 // build needs to serve it offline, in npm-purifier.lock.json beside
-// package-lock.json:
+// package-lock.json, under the dependency's `resolved`. The build reads
+// the commit, the directory in the repository and, for a repository npm
+// clones, its URL from `resolved`, so the entry holds only:
 //
 //   - the commit, as a Nix hash of its checkout;
 //   - for a repository on a known host, the archive URL npm downloads
-//     instead of cloning;
-//   - for any other repository, the URL npm clones, the raw commit object,
-//     and the URL, commit and commit object of each submodule, from which
-//     a build makes the repositories again;
+//     instead of cloning, and the URL the checkout is fetched from, which
+//     npm's rules for the host decide;
+//   - for any other repository, whether it has submodules, the raw commit
+//     object, and the URL, commit and commit object of each submodule,
+//     from which a build makes the repositories again;
 //   - for a dependency that npm prepares (one with a prepare, build or
 //     install script, or with workspaces), the lockfile of its own
 //     dependencies, which npm installs before running the script. The run
@@ -25,7 +28,14 @@
 // The dependencies of a prepared git dependency can be git dependencies
 // themselves; the run records those too.
 //
-// Usage: node nix-lock.js <project root>
+// npm-purifier.lock.json holds its format version and the SRI hash of its
+// own text with the value of its top-level `hash` field left empty, so a
+// build can tell a file changed by hand.
+//
+// The run starts with `npm install --package-lock-only`, which brings
+// package-lock.json in step with package.json.
+//
+// Usage: node lock.js <project root> [<npm-purifier.lock.json>]
 // The environment names npm's own modules (NPM_PURIFIER_NPM_MODULES) and
 // npm (NPM_PURIFIER_NPM).
 
@@ -246,6 +256,14 @@ const sourceOf = (resolved) => {
   return { rev, subdir, url: spec.fetchSpec, repository: spec.fetchSpec };
 };
 
+// The URL npm clones a repository from, as the build derives it from the
+// `resolved` of a git dependency: without the `git+` and the fragment.
+const cloneUrlOf = (resolved) => resolved.replace(/^git\+/, "").replace(/#.*$/, "");
+
+// The entry of a git dependency holds only what package-lock.json cannot
+// tell: the Nix hash of the checkout, and what npm's rules or the
+// repository itself decide. The build reads the commit and the directory
+// in the repository from the `resolved` the entry is keyed by.
 const lockGit = (resolved) => {
   const source = sourceOf(resolved);
   const { rev, subdir } = source;
@@ -253,11 +271,11 @@ const lockGit = (resolved) => {
   let fetched;
   if (source.archive) {
     // npm downloads the host's archive of the commit, which holds no
-    // submodules.
-    const { url } = source;
-    fetched = prefetch(url, rev, { submodules: false, leaveDotGit: false });
-    entry.git = { url, rev, submodules: false, leaveDotGit: false, commitObject: null };
+    // submodules. npm's rules for the host give the archive URL and the
+    // URL the checkout is fetched from.
+    fetched = prefetch(source.url, rev, { submodules: false, leaveDotGit: false });
     entry.archive = source.archive;
+    entry.url = source.url;
   } else {
     // npm clones the repository and its submodules with git. A checkout
     // that keeps its .git directory has no stable hash, because git packs
@@ -265,20 +283,21 @@ const lockGit = (resolved) => {
     // checkout, and the raw commit objects from which a build makes the
     // repositories again.
     const { url } = source;
+    if (url !== cloneUrlOf(resolved)) {
+      throw new Error(
+        `npm clones ${resolved} from ${url}, which npm-purifier cannot derive from the lockfile; write the dependency as git+${url}#${rev}`,
+      );
+    }
     const probe = prefetch(url, rev, { submodules: false, leaveDotGit: false });
     const submodules = fs.existsSync(path.join(probe.path, ".gitmodules"));
     fetched = submodules ? prefetch(url, rev, { submodules, leaveDotGit: false }) : probe;
-    // `leaveDotGit` asks the build for a .git directory, which it makes
-    // from the checkout and `commitObject`. `hash` is the NAR hash of the
-    // plain checkout.
     const commitObject = commitOf(url, rev);
-    entry.git = { url, rev, submodules, leaveDotGit: true, commitObject };
-    entry.repository = url;
+    entry.submodules = submodules;
+    entry.commitObject = commitObject;
     const urls = submodulesOf(fetched.path, url);
-    entry.submodules = repositoryOf(url, rev, commitObject.gitlinks, urls, "");
+    entry.submoduleRepositories = repositoryOf(url, rev, commitObject.gitlinks, urls, "");
   }
   entry.hash = fetched.hash;
-  if (subdir) entry.subdir = subdir;
   const preparation = preparationLock(path.join(fetched.path, subdir));
   if (preparation) {
     entry.packageLock = preparation.lock;
@@ -287,9 +306,25 @@ const lockGit = (resolved) => {
   return entry;
 };
 
-const main = (root) => {
+// The format of npm-purifier.lock.json that this run writes.
+const formatVersion = 3;
+
+// The text of a lockfile whose top-level `hash` is empty, with that hash
+// filled in.
+const withHash = (text) => {
+  const blank = '"hash": ""';
+  const hash = "sha256-" + crypto.createHash("sha256").update(text).digest("base64");
+  return text.replace(blank, `"hash": "${hash}"`);
+};
+
+const main = (root, purifierLockPath) => {
   const packageLockPath = path.join(root, "package-lock.json");
-  const purifierLockPath = path.join(root, "npm-purifier.lock.json");
+  // npm brings package-lock.json in step with package.json, resolving
+  // against the registry; an up-to-date lockfile stays as it is.
+  execFileSync(npm, ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], {
+    cwd: root,
+    stdio: ["ignore", "inherit", "inherit"],
+  });
   const packageLock = readJson(packageLockPath);
   const completed = completeLock(packageLock, registryDist);
   if (completed.length > 0) {
@@ -324,16 +359,19 @@ const main = (root) => {
   }
   const sorted = Object.fromEntries(Object.keys(git).sort().map((k) => [k, git[k]]));
   const lock = {
-    version: 1,
+    version: formatVersion,
+    hash: "",
     packageLockSha256: crypto.createHash("sha256").update(packageLockText).digest("hex"),
     git: sorted,
   };
-  fs.writeFileSync(purifierLockPath, JSON.stringify(lock, null, 2) + "\n");
+  fs.writeFileSync(purifierLockPath, withHash(JSON.stringify(lock, null, 2) + "\n"));
   process.stderr.write(`npm-purifier: wrote ${purifierLockPath}\n`);
 };
 
-// The parts that need no network, for pkgs/npm/nix-lock.test.js.
+// The parts that need no network, for pkgs/npm-purifier/lock.test.js.
 module.exports = {
+  withHash,
+  cloneUrlOf,
   gitDependencies,
   sourceOf,
   resolveSubmoduleUrl,
@@ -344,5 +382,6 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main(path.resolve(process.argv[2] || "."));
+  const root = path.resolve(process.argv[2] || ".");
+  main(root, path.resolve(process.argv[3] || path.join(root, "npm-purifier.lock.json")));
 }

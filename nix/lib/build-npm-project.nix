@@ -2,67 +2,67 @@
 #
 # buildNpmProject: sandboxed builds of an npm project, from the
 # package-lock.json at its root, and from the npm-purifier.lock.json that
-# `npm nix-lock` writes beside it when the project has git dependencies.
-# The project needs no Nix files of its own: the lockfiles name every
-# tarball and repository the install fetches, and every package of the
-# project (the root, its workspaces and the local directories it depends
-# on).
+# `npm-purifier lock` writes beside it when the project has git
+# dependencies. The project needs no Nix files of its own: the lockfiles
+# name every tarball and repository the install fetches, and every package
+# of the project (the root, its workspaces and the local directories it
+# depends on).
 #
-# The file is a package for callPackage: the first argument set is what it
-# takes from the package set, and the result is the builder. The
-# npm-purifier overlay (`overlays.default`) adds it to the package set as
-# `buildNpmProject`, so a package written for callPackage takes it like any
-# other dependency:
+# The flake publishes the builder in its library, as
+# `lib.npm-purifier.buildNpmProject`:
 #
-#   { buildNpmProject }: (buildNpmProject { src = ./.; }).packages.my-app
+#   (npm-purifier.lib.npm-purifier.buildNpmProject {
+#     inherit pkgs;
+#     src = ./.;
+#   }).packages.my-app
 #
-# and `buildNpmProject.override` replaces what it takes from the set. The
-# builder returns
+# The builder returns
 #
-#   cache             the content of npm's cache: every locked tarball, and
-#                     the archives of git dependencies
-#   build             the project after `npm ci`, its build scripts and
-#                     `npm pack`: one tarball per package of the project
-#   check             the project's `test` script, run after its build scripts
-#   productionModules the production dependencies (`npm ci --omit=dev`)
 #   packages.<name>   package <name> of the project, installed with its
 #                     production dependencies under lib/node_modules, with
 #                     its commands in bin/; its `tarball` output holds
 #                     package.tgz, the file `npm publish` uploads
+#   tests             the project's `test` script, run after its build
+#                     scripts
+#   release           the tarballs `npm-purifier publish` uploads, one per
+#                     package of the project, at <name>.tgz with the
+#                     package name's `@` left out and its `/` as `__`
+#   fetches           the entries of the purifier library that the build
+#                     fetches: the locked tarballs and the git dependencies
+#   cache             the content of npm's cache: every locked tarball, and
+#                     the archives of git dependencies
+#   productionModules the production dependencies (`npm ci --omit=dev`)
+#   interactive       what `npm-purifier prefetch` builds for the `npm`
+#                     wrapper
+{ lib }:
 {
-  lib,
-  stdenv,
-  callPackage,
-  runCommand,
-  writeShellScript,
-  runtimeShell,
-  nodejs,
-  python3,
-  git,
-  # The shared purifier library, which the flake's overlay passes.
-  purifier,
-}:
-{
+  # The package set to build with.
+  pkgs,
   # The source tree. It holds the project and every local directory the
   # project depends on.
   src,
+  # Fetchers that replace those of the purifier library (fetchurl,
+  # fetchgit), such as a fetchurl that sends credentials or reads a mirror.
+  fetchers ? { },
   # The directory of the project inside `src`, where package.json and
   # package-lock.json lie. The default is the root of `src`.
   projectDir ? "",
-  # The lockfile; the default is the one npm writes at the project root.
-  lockFile ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json",
-  # The lockfile of the git dependencies, which `npm nix-lock` writes
-  # beside package-lock.json.
-  purifierLockFile ? dirOf lockFile + "/npm-purifier.lock.json",
+  # npm's lockfile; the default is the one npm writes at the project root.
+  # A package-lock.json given from outside `src` replaces the one in it.
+  packageLock ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json",
+  # npm-purifier.lock.json, which `npm-purifier lock` writes for the git
+  # dependencies; the default is the one at the project root. A packaging
+  # flake keeps it outside `src` for a project its author does not change.
+  lockFile ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/npm-purifier.lock.json",
   # The Node.js that runs npm and the project's scripts, and that the
   # packages' commands run on. Git dependencies with a prepare script need
   # the Node.js of nixpkgs, whose npm prepares them inside the sandbox.
-  node ? nodejs,
+  node ? pkgs.nodejs,
   # The package scripts that build the project, run in order before the
   # packages are packed. A script the root package defines runs at the
   # root; otherwise it runs in each workspace that defines it.
   buildScripts ? [ "build" ],
-  # Makes the packages depend on `check`, which runs the `test` script the
+  # Makes the packages depend on `tests`, which runs the `test` script the
   # same way, after the build scripts.
   doCheck ? false,
   # Arguments for the `test` script, as `npm test -- <arguments>` passes
@@ -70,11 +70,9 @@
   checkFlags ? [ ],
   # Tools the build scripts and the dependencies' install scripts need.
   # Python is there for node-gyp.
-  nativeBuildInputs ? [ python3 ],
+  nativeBuildInputs ? [ pkgs.python3 ],
   # Libraries native addons link against.
   buildInputs ? [ ],
-  # Replaces the fetcher of the locked tarballs.
-  fetchurl ? null,
   # Checkouts that replace the fetches of git dependencies, by their
   # `resolved` in the lockfile: for a repository the sandbox cannot reach,
   # such as a private one, a checkout fetched with the user's credentials
@@ -89,14 +87,19 @@
   srcFilter ? null,
 }:
 let
-  cache = callPackage ./cache.nix {
-    inherit
-      lockFile
-      purifierLockFile
-      fetchurl
-      gitCheckouts
-      purifier
-      ;
+  inherit (pkgs)
+    stdenv
+    runCommand
+    writeShellScript
+    runtimeShell
+    git
+    ;
+
+  cache = pkgs.callPackage ./cache.nix {
+    inherit fetchers gitCheckouts;
+    inherit (lib) purifier;
+    lockFile = packageLock;
+    purifierLockFile = lockFile;
   };
   inherit (cache) lock;
 
@@ -131,7 +134,7 @@ let
     in
     lib.concatStringsSep "/" (lib.foldl' step [ ] parts);
 
-  # The file name of a package's tarball in `build`.
+  # The file name of a package's tarball in `release`.
   tarballName = p: (builtins.replaceStrings [ "@" "/" ] [ "" "__" ] p.name) + ".tgz";
 
   # The setup shared by every build: npm runs offline against a cache whose
@@ -157,8 +160,8 @@ let
     cp -rs --no-preserve=mode ${cache.tree}/. "$npm_config_cache/_cacache"
     ${cache.environment}
     # npm installs from the lockfile this build read, which is the
-    # project's own unless `lockFile` names another.
-    cp --no-preserve=mode ${lockFile} package-lock.json
+    # project's own unless `packageLock` names another.
+    cp --no-preserve=mode ${packageLock} package-lock.json
   '';
 
   # npm runs every package script as `<script-shell> -c <command>`, with
@@ -219,8 +222,8 @@ let
 
   inputs = [ node ] ++ lib.optional cache.needsGit git ++ nativeBuildInputs;
 
-  build = stdenv.mkDerivation {
-    name = "npm-project-build";
+  release = stdenv.mkDerivation {
+    name = "npm-project-release";
     src = filteredSrc;
     nativeBuildInputs = inputs;
     inherit buildInputs;
@@ -256,11 +259,11 @@ let
 
   # The project's tests, after the build scripts. Tests often run the
   # project's own scripts, whose `#!/usr/bin/env` lines find no interpreter
-  # in the sandbox, so the check gives every script of its copy of the
-  # source an absolute interpreter first. The check runs apart from
-  # `build`, whose tarballs keep the files as the project has them.
-  check = stdenv.mkDerivation {
-    name = "npm-project-check";
+  # in the sandbox, so the test run gives every script of its copy of the
+  # source an absolute interpreter first. It runs apart from `release`,
+  # whose tarballs keep the files as the project has them.
+  tests = stdenv.mkDerivation {
+    name = "npm-project-tests";
     src = filteredSrc;
     nativeBuildInputs = inputs;
     inherit buildInputs;
@@ -337,12 +340,12 @@ let
       # The commands' interpreter is this Node.js.
       buildInputs = [ node ];
       # With doCheck, a package exists only once the project's tests pass.
-      ${if doCheck then "tested" else null} = check;
+      ${if doCheck then "tested" else null} = tests;
       installPhase = ''
         runHook preInstall
         modules="$out/lib/node_modules"
         mkdir -p "$modules" "$tarball"
-        cp ${build}/${lib.escapeShellArg (tarballName p)} "$tarball/package.tgz"
+        cp ${release}/${lib.escapeShellArg (tarballName p)} "$tarball/package.tgz"
         if [ -d ${projectModules}/node_modules ]; then
           cp -a ${projectModules}/node_modules/. "$modules/"
           chmod -R u+w "$modules"
@@ -351,7 +354,7 @@ let
         ${lib.concatMapStrings (o: ''
           rm -rf "$modules"/${lib.escapeShellArg o.name}
           mkdir -p "$modules"/${lib.escapeShellArg o.name}
-          tar -xzf ${build}/${lib.escapeShellArg (tarballName o)} --strip-components=1 \
+          tar -xzf ${release}/${lib.escapeShellArg (tarballName o)} --strip-components=1 \
             -C "$modules"/${lib.escapeShellArg o.name}
           ${lib.optionalString (o.dir != "") ''
             if [ -d ${productionModules}/${lib.escapeShellArg (inSrc o.dir)}/node_modules ]; then
@@ -380,7 +383,8 @@ let
     };
 in
 {
-  inherit build productionModules check;
+  inherit release tests productionModules;
+  inherit (cache) fetches;
   cache = cache.tree;
   packages = lib.mapAttrs (_: mkPackage) lock.packages;
   # What the `npm` wrapper builds for the project: the content of npm's

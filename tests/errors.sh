@@ -49,23 +49,44 @@ lockfile() {
   cat > "$work/$1/package-lock.json"
 }
 
+# purifierLock <name> <version> <packageLockSha256>: writes an
+# npm-purifier.lock.json without entries, laid out and hashed as
+# `npm-purifier lock` writes it.
+purifierLock() {
+  local file="$work/$1/npm-purifier.lock.json"
+  printf '{\n  "version": %s,\n  "hash": "",\n  "packageLockSha256": "%s",\n  "git": {}\n}\n' "$2" "$3" > "$file"
+  local hash
+  hash="$(nix hash file --type sha256 --sri "$file")"
+  sed -i "s|\"hash\": \"\"|\"hash\": \"$hash\"|" "$file"
+}
+
 gitLock="{\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"p\"},\"node_modules/a\":{\"resolved\":\"git+ssh://git@github.com/o/a.git#$sha\"}}}"
 
 # A git dependency, and no npm-purifier.lock.json.
 lockfile no-purifier-lock <<< "$gitLock"
-expect no-purifier-lock 'run `npm nix-lock`'
+expect no-purifier-lock 'run `npm-purifier lock`'
 
 # npm-purifier.lock.json made for another package-lock.json: the developer
 # edited package-lock.json without the wrapper.
 lockfile stale <<< "$gitLock"
-echo '{"version":1,"packageLockSha256":"0000","git":{}}' > "$work/stale/npm-purifier.lock.json"
-expect stale 'was made for another package-lock.json; run `npm nix-lock`'
+purifierLock stale 3 0000
+expect stale 'was made for another package-lock.json; run `npm-purifier lock`'
 
 # npm-purifier.lock.json without the git dependency.
 lockfile missing-entry <<< "$gitLock"
-hash="$(sha256sum "$work/missing-entry/package-lock.json" | cut -d' ' -f1)"
-echo "{\"version\":1,\"packageLockSha256\":\"$hash\",\"git\":{}}" > "$work/missing-entry/npm-purifier.lock.json"
+purifierLock missing-entry 3 "$(sha256sum "$work/missing-entry/package-lock.json" | cut -d' ' -f1)"
 expect missing-entry 'has no entry for'
+
+# npm-purifier.lock.json changed by hand after the lock run wrote it.
+lockfile tampered <<< "$gitLock"
+purifierLock tampered 3 "$(sha256sum "$work/tampered/package-lock.json" | cut -d' ' -f1)"
+sed -i 's|"git": {}|"git": {"x": {}}|' "$work/tampered/npm-purifier.lock.json"
+expect tampered 'was changed after `npm-purifier lock` wrote it'
+
+# npm-purifier.lock.json of an older format.
+lockfile old-format <<< "$gitLock"
+purifierLock old-format 2 "$(sha256sum "$work/old-format/package-lock.json" | cut -d' ' -f1)"
+expect old-format 'is not of format version 3; run `npm-purifier lock`'
 
 # A lockfile from npm 6.
 lockfile old <<< '{"lockfileVersion":1,"dependencies":{}}'
@@ -73,7 +94,7 @@ expect old 'run `npm install` with npm 7 or newer'
 
 # A tarball without an integrity.
 lockfile no-integrity <<< '{"lockfileVersion":3,"packages":{"node_modules/a":{"resolved":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"}}}'
-expect no-integrity 'run `npm nix-lock` to record one'
+expect no-integrity 'run `npm-purifier lock` to record one'
 
 # A tarball without a URL, as some lockfiles leave it.
 lockfile no-resolved <<< '{"lockfileVersion":3,"packages":{"node_modules/url-join":{"version":"4.0.1"}}}'

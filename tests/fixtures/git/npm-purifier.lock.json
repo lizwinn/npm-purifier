@@ -1,40 +1,29 @@
 {
-  "version": 1,
-  "packageLockSha256": "c9c1d9cce4eebeb1e3eef0400975e15d2142a48cf54769054a17ba4a3ebae3c8",
+  "version": 3,
+  "hash": "sha256-ffXjQ/NXCgIgcF+EVTTDoGx9jMrA4UdxWmp2UUyESBk=",
+  "packageLockSha256": "547cc3661ce4acc5c8015d4ed5fd2975486fdf37dee5fd3575a8470613cde839",
   "git": {
     "git+https://codeberg.org/sailingthroughcode/remark-iptc-caption.git#84da44035a4b19d689178a10610d75264775635b": {
-      "git": {
-        "url": "https://codeberg.org/sailingthroughcode/remark-iptc-caption.git",
-        "rev": "84da44035a4b19d689178a10610d75264775635b",
-        "submodules": false,
-        "leaveDotGit": true,
-        "commitObject": {
-          "object": "dHJlZSA5ZGMyODYwYWZhZDNlZGNiNGNhZGViZjk0YTRjZTVmODZhYzM0Y2MwCnBhcmVudCAyZTAwMjk3MTFhMDI0ZTdiZWNkMDgwNmMwYWI4YzBlNzgwZjdmZjBkCmF1dGhvciBsdWtlIDxsdWthcy5zcGlla2VyQGdtYWlsLmNvbT4gMTc5MzE5MjY5NyArMDEwMApjb21taXR0ZXIgbHVrZSA8bHVrYXMuc3BpZWtlckBnbWFpbC5jb20+IDE3OTMxOTI2OTcgKzAxMDAKCnJlbWFyay1pcHRjLWNhcHRpb24gMS4xLjI6IGEgPGZpZ2NhcHRpb24+IG9uIHRoZSBsaW5lcyByaWdodCBhZnRlciBhIHBob3RvIGlzIHRoZSBwb3N0J3Mgb3duLCB0aGUgd2F5IHRvIGNhcHRpb24gYnkgaGFuZCBpbiBwbGFpbiAubWQsIGFuZCB3aW5zIG92ZXIgdGhlIHBob3RvJ3M6IHRoZSB0d28gYmVjb21lIG9uZSA8ZmlndXJlPiAoYSBvbmUtbGluZSA8ZmlnY2FwdGlvbj4gaW4gTURYIHRvbykuIEJlZm9yZSwgdGhlIHBob3RvIGdvdCBpdHMgZW1iZWRkZWQgY2FwdGlvbiBhcyB3ZWxsIGFuZCB0aGUgcG9zdCBzaG93ZWQgYm90aC4gVGVzdHM6IDE0IHBhc3M7IG9uIGNvZWxhY2FudGguY2ggb25seSB0aGUgUmFzcGJlcnJ5IFBpIGxvZ2dpbmcgcG9zdCBjaGFuZ2VzLCBub3cgY2FwdGlvbmVkIG9uY2UuCg==",
-          "gitlinks": []
-        }
+      "submodules": false,
+      "commitObject": {
+        "object": "dHJlZSA5ZGMyODYwYWZhZDNlZGNiNGNhZGViZjk0YTRjZTVmODZhYzM0Y2MwCnBhcmVudCAyZTAwMjk3MTFhMDI0ZTdiZWNkMDgwNmMwYWI4YzBlNzgwZjdmZjBkCmF1dGhvciBsdWtlIDxsdWthcy5zcGlla2VyQGdtYWlsLmNvbT4gMTc5MzE5MjY5NyArMDEwMApjb21taXR0ZXIgbHVrZSA8bHVrYXMuc3BpZWtlckBnbWFpbC5jb20+IDE3OTMxOTI2OTcgKzAxMDAKCnJlbWFyay1pcHRjLWNhcHRpb24gMS4xLjI6IGEgPGZpZ2NhcHRpb24+IG9uIHRoZSBsaW5lcyByaWdodCBhZnRlciBhIHBob3RvIGlzIHRoZSBwb3N0J3Mgb3duLCB0aGUgd2F5IHRvIGNhcHRpb24gYnkgaGFuZCBpbiBwbGFpbiAubWQsIGFuZCB3aW5zIG92ZXIgdGhlIHBob3RvJ3M6IHRoZSB0d28gYmVjb21lIG9uZSA8ZmlndXJlPiAoYSBvbmUtbGluZSA8ZmlnY2FwdGlvbj4gaW4gTURYIHRvbykuIEJlZm9yZSwgdGhlIHBob3RvIGdvdCBpdHMgZW1iZWRkZWQgY2FwdGlvbiBhcyB3ZWxsIGFuZCB0aGUgcG9zdCBzaG93ZWQgYm90aC4gVGVzdHM6IDE0IHBhc3M7IG9uIGNvZWxhY2FudGguY2ggb25seSB0aGUgUmFzcGJlcnJ5IFBpIGxvZ2dpbmcgcG9zdCBjaGFuZ2VzLCBub3cgY2FwdGlvbmVkIG9uY2UuCg==",
+        "gitlinks": []
       },
-      "repository": "https://codeberg.org/sailingthroughcode/remark-iptc-caption.git",
-      "submodules": [],
+      "submoduleRepositories": [],
       "hash": "sha256-2wGEVMAheNuGFxH8M3wnz8OmUDrs2T6wwGGa8pSX2Mk="
     },
     "git+https://example.invalid/npm-purifier-clone.git#c2eaed048fb06b92697c038ecaf17236a1a363fa": {
-      "git": {
-        "url": "https://example.invalid/npm-purifier-clone.git",
-        "rev": "c2eaed048fb06b92697c038ecaf17236a1a363fa",
-        "submodules": true,
-        "leaveDotGit": true,
-        "commitObject": {
-          "object": "dHJlZSAwOWJmZmFkODY4NDNmMzJlZjM3OTdmMWM2ZWIyOGZmMjFjNGJhNTQ3CmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHBhY2thZ2UK",
-          "gitlinks": [
-            {
-              "path": "vendor/sub",
-              "rev": "6cd15a5a8aa49da187ca80d7e5f0920f43d22aa0"
-            }
-          ]
-        }
+      "submodules": true,
+      "commitObject": {
+        "object": "dHJlZSAwOWJmZmFkODY4NDNmMzJlZjM3OTdmMWM2ZWIyOGZmMjFjNGJhNTQ3CmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHBhY2thZ2UK",
+        "gitlinks": [
+          {
+            "path": "vendor/sub",
+            "rev": "6cd15a5a8aa49da187ca80d7e5f0920f43d22aa0"
+          }
+        ]
       },
-      "repository": "https://example.invalid/npm-purifier-clone.git",
-      "submodules": [
+      "submoduleRepositories": [
         {
           "url": "https://example.invalid/npm-purifier-sub.git",
           "path": "vendor/sub",
@@ -75,27 +64,14 @@
       "injectPackageLock": true
     },
     "git+ssh://git@github.com/jonschlinkert/is-number.git#98e8ff1da1a89f93d1397a24d7413ed15421c139": {
-      "git": {
-        "url": "https://github.com/jonschlinkert/is-number.git",
-        "rev": "98e8ff1da1a89f93d1397a24d7413ed15421c139",
-        "submodules": false,
-        "leaveDotGit": false,
-        "commitObject": null
-      },
       "archive": "https://codeload.github.com/jonschlinkert/is-number/tar.gz/98e8ff1da1a89f93d1397a24d7413ed15421c139",
+      "url": "https://github.com/jonschlinkert/is-number.git",
       "hash": "sha256-iXMMKTTQsq2JThh2km8KULeisQ9bR0VmN5p9GwkiXo8="
     },
     "git+ssh://git@github.com/nix-purifiers/npm-purifier.git#2c8fcf8a6ca85cdaa8cf93803c226fb02f374e4e::path:tests/git-dependencies/prepared": {
-      "git": {
-        "url": "https://github.com/nix-purifiers/npm-purifier.git",
-        "rev": "2c8fcf8a6ca85cdaa8cf93803c226fb02f374e4e",
-        "submodules": false,
-        "leaveDotGit": false,
-        "commitObject": null
-      },
       "archive": "https://codeload.github.com/nix-purifiers/npm-purifier/tar.gz/2c8fcf8a6ca85cdaa8cf93803c226fb02f374e4e%3A%3Apath%3Atests%2Fgit-dependencies%2Fprepared",
+      "url": "https://github.com/nix-purifiers/npm-purifier.git",
       "hash": "sha256-61ToQ31WjQ44NfmpmzAtkHSkw4fA4ShCUTS0u2ORNV8=",
-      "subdir": "tests/git-dependencies/prepared",
       "packageLock": {
         "name": "npm-purifier-prepared-fixture",
         "version": "1.0.0",

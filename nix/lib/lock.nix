@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 #
 # Reads a package-lock.json (lockfileVersion 2 or 3) and, when the project
-# has git dependencies, the npm-purifier.lock.json that `npm nix-lock`
+# has git dependencies, the npm-purifier.lock.json that `npm-purifier lock`
 # writes beside it, at evaluation time. It returns
 #
 #   downloads   one entry per tarball the install needs, as
@@ -12,7 +12,7 @@
 #               the lock has them. The tarballs that prepared git
 #               dependencies install are among them.
 #   git         the git dependencies, by their `resolved`, as the entries
-#               of npm-purifier.lock.json (see pkgs/npm/nix-lock.js)
+#               of npm-purifier.lock.json (see pkgs/npm-purifier/lock.js)
 #   packages    the project's own packages (the root, its workspaces and
 #               the local directories it depends on), by package name, as
 #               { name, version, dir, bin }; a root that declares
@@ -90,11 +90,11 @@ let
       isHttp = lib.hasPrefix "https://" resolved || lib.hasPrefix "http://" resolved;
     in
     if !(entry ? resolved) then
-      throw "npm-purifier: ${key} has no resolved URL in ${name}; run `npm nix-lock` to record it."
+      throw "npm-purifier: ${key} has no resolved URL in ${name}; run `npm-purifier lock` to record it."
     else if !isHttp then
       throw "npm-purifier: ${key} in ${name} comes from ${resolved}, which is neither a tarball URL, a git repository nor a path."
     else if !(entry ? integrity) then
-      throw "npm-purifier: ${key} (${resolved}) has no integrity in ${name}; run `npm nix-lock` to record one."
+      throw "npm-purifier: ${key} (${resolved}) has no integrity in ${name}; run `npm-purifier lock` to record one."
     else
       let
         # An integrity may list several hashes; the strongest comes first
@@ -146,16 +146,37 @@ let
 
   purifierLockName = toString purifierLockFile;
   hasPurifierLock = builtins.pathExists purifierLockFile;
-  purifierLock = readLockFile purifierLockFile "run `npm nix-lock` to write it again";
+  purifierLock = readLockFile purifierLockFile "run `npm-purifier lock` to write it again";
   needsPurifierLock = gitOf packages != [ ];
+
+  # The lockfile format this reader reads.
+  formatVersion = 3;
+
+  # npm-purifier.lock.json holds the SRI hash of its own text, with the
+  # value of its top-level `hash` field left empty. A file whose hash does
+  # not match was changed after `npm-purifier lock` wrote it.
+  purifierLockHash =
+    let
+      text = builtins.readFile purifierLockFile;
+      blank = builtins.replaceStrings [ "\"hash\": \"${purifierLock.hash}\"" ] [ "\"hash\": \"\"" ] text;
+    in
+    builtins.convertHash {
+      hash = builtins.hashString "sha256" blank;
+      hashAlgo = "sha256";
+      toHashFormat = "sri";
+    };
 
   git =
     if !needsPurifierLock then
       { }
     else if !hasPurifierLock then
-      throw "npm-purifier: ${toString lockFile} has git dependencies, and ${purifierLockName} does not exist; run `npm nix-lock`."
+      throw "npm-purifier: ${toString lockFile} has git dependencies, and ${purifierLockName} does not exist; run `npm-purifier lock`."
+    else if (purifierLock.version or null) != formatVersion then
+      throw "npm-purifier: ${purifierLockName} is not of format version ${toString formatVersion}; run `npm-purifier lock` to write it again."
+    else if purifierLockHash != purifierLock.hash then
+      throw "npm-purifier: ${purifierLockName} was changed after `npm-purifier lock` wrote it: its hash does not match its content; run `npm-purifier lock` to write it again."
     else if purifierLock.packageLockSha256 != builtins.hashFile "sha256" lockFile then
-      throw "npm-purifier: ${purifierLockName} was made for another package-lock.json; run `npm nix-lock`."
+      throw "npm-purifier: ${purifierLockName} was made for another package-lock.json; run `npm-purifier lock`."
     else
       purifierLock.git;
 
@@ -163,8 +184,40 @@ let
   # git dependencies, needs its entry.
   gitEntry =
     resolved:
-    git.${resolved}
-      or (throw "npm-purifier: ${purifierLockName} has no entry for ${resolved}; run `npm nix-lock`.");
+    complete resolved (
+      git.${resolved}
+        or (throw "npm-purifier: ${purifierLockName} has no entry for ${resolved}; run `npm-purifier lock`.")
+    );
+
+  # A git dependency as git.nix takes it: the entry of the purifier
+  # lockfile, with what its `resolved` tells, which npm writes as
+  # git+<URL>#<commit> and, for a directory in the repository, ::path:<directory>
+  # after the commit. A repository npm clones comes from the URL itself,
+  # and its library entry asks for a .git directory, made from the
+  # checkout and the recorded commit object.
+  complete =
+    resolved: entry:
+    let
+      fragment = lib.last (lib.splitString "#" resolved);
+      parts = lib.splitString "::path:" fragment;
+      rev = builtins.head parts;
+      subdir = if builtins.length parts > 1 then lib.last parts else "";
+      cloneUrl = lib.removePrefix "git+" (builtins.head (lib.splitString "#" resolved));
+      archived = entry ? archive;
+    in
+    entry
+    // {
+      inherit subdir;
+      git = {
+        url = if archived then entry.url else cloneUrl;
+        inherit rev;
+        submodules = entry.submodules or false;
+        leaveDotGit = !archived;
+        commitObject = if archived then null else entry.commitObject;
+      };
+      repository = cloneUrl;
+      submodules = entry.submoduleRepositories or [ ];
+    };
   preparationLocks = lib.mapAttrsToList (
     resolved: entry: lib.nameValuePair resolved entry.packageLock
   ) (lib.filterAttrs (_: entry: entry ? packageLock) git);

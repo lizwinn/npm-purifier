@@ -1,19 +1,21 @@
 # SPDX-License-Identifier: MIT
 #
-# The builds `npm nix-publish` publishes from: buildNpmProject of the
-# project whose package-lock.json is `lockFile`. A project that depends on
+# The build `npm-purifier publish` and `npm-purifier prefetch` evaluate:
+# buildNpmProject of the project whose package-lock.json is `packageLock`,
+# with the npm-purifier.lock.json at `lockFile`. A project that depends on
 # local directories outside its own directory builds from the directory
 # that holds them all, with the project's directory inside it as
 # `projectDir`.
 {
-  # A package set with the flake's overlay, which adds buildNpmProject.
+  # The library of this flake, with `npm-purifier.buildNpmProject`.
+  lib,
+  # The package set to build with.
   pkgs,
-  lockFile,
+  packageLock,
+  lockFile ? dirOf packageLock + "/npm-purifier.lock.json",
 }:
 let
-  inherit (pkgs) lib;
-
-  lock = lib.importJSON lockFile;
+  lock = lib.importJSON packageLock;
 
   # How many directories above the project the farthest local package
   # lies.
@@ -25,12 +27,12 @@ let
     leading (lib.splitString "/" key);
   depth = lib.foldl' lib.max 0 (map depthOf (builtins.attrNames lock.packages));
 
-  projectRoot = dirOf lockFile;
+  projectRoot = dirOf packageLock;
   up = n: path: if n == 0 then path else up (n - 1) (dirOf path);
   rootParts = lib.filter (p: p != "") (lib.splitString "/" (toString projectRoot));
 in
-pkgs.buildNpmProject {
+lib.npm-purifier.buildNpmProject {
+  inherit pkgs packageLock lockFile;
   src = up depth projectRoot;
   projectDir = lib.concatStringsSep "/" (lib.drop (lib.length rootParts - depth) rootParts);
-  inherit lockFile;
 }

@@ -12,7 +12,8 @@
 #
 # Each dependency is a git entry of the shared purifier library,
 # { path, git = { url, rev, submodules, leaveDotGit, commitObject }, hash },
-# which the library fetches. For the first way, `cache` holds each archive,
+# which the library fetches. lock.nix makes it from the dependency's
+# `resolved` in package-lock.json and its entry in npm-purifier.lock.json. For the first way, `cache` holds each archive,
 # packed in Nix from the checkout, with the index entry that makes npm's
 # HTTP cache answer the archive URL with it. For the second, the entry has
 # `leaveDotGit`, so the library rebuilds the repository's .git directory
@@ -29,7 +30,7 @@
 # with `npm ci` when NIX_NODEJS_BUILDNPMPACKAGE is set, and runs
 # `$prefetchNpmDeps --fixup-lockfile package-lock.json` before it.
 # `prefetchNpmDeps` is the hook below: it places the lockfile that
-# `npm nix-lock` made for a dependency whose repository has none. An
+# `npm-purifier lock` made for a dependency whose repository has none. An
 # archive carries that lockfile inside already.
 {
   lib,
@@ -41,6 +42,8 @@
   openssl,
   # The shared purifier library.
   purifier,
+  # Fetchers that replace those of the purifier library.
+  fetchers ? { },
   # The git dependencies, by their `resolved`, as lock.nix returns them.
   git,
   # Plain checkouts, with submodules checked out where npm clones them,
@@ -54,10 +57,16 @@ let
     lib.nameValuePair "${git.${resolved}.git.url}#${git.${resolved}.git.rev}" checkout
   ) (lib.filterAttrs (resolved: _: git ? ${resolved}) checkouts);
 
-  fetchEntry = purifier.fetchEntry {
-    inherit pkgs;
-    fetchgit = args: replacements."${args.url}#${args.rev}" or (pkgs.fetchgit args);
-  };
+  fetchEntry = purifier.fetchEntry (
+    {
+      inherit pkgs;
+    }
+    // fetchers
+    // {
+      fetchgit =
+        args: replacements."${args.url}#${args.rev}" or ((fetchers.fetchgit or pkgs.fetchgit) args);
+    }
+  );
 
   # The library entry of a dependency: lock.nix keeps the entry's own
   # fields, and the library needs only these.
@@ -221,6 +230,8 @@ let
 in
 {
   inherit cache gitConfig prefetchNpmDeps;
+  # The purifier library entries of the git dependencies.
+  entries = lib.mapAttrsToList (_: entryOf) git;
   # The repositories made for each cloned dependency, by `resolved`.
   repositories = lib.mapAttrs repositories clones;
   # Whether the install clones repositories with git.

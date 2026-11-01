@@ -2,22 +2,28 @@
 #
 # The flake's checks. Every one builds in the sandbox; the only network
 # access is the fixed-output fetches of locked tarballs and git checkouts.
-# tests/lock-run.sh and tests/interactive.sh check the lock run and the
-# `npm` wrapper, which need the network and Nix itself.
+# The checks of the purifier contract that need the network or Nix itself
+# run in CI as jobs of the same name: conformance-relock
+# (tests/conformance-relock.sh), conformance-rebuild
+# (tests/conformance-rebuild.sh) and conformance-offline
+# (tests/conformance-offline.sh).
 {
   pkgs,
-  # The flake's default package overlay, which adds buildNpmProject.
+  # The flake's default package overlay, which adds the commands.
   overlay,
   # The shared purifier library.
   purifier,
+  # The library namespace of this flake, with buildNpmProject.
+  npm-purifier,
 }:
 let
   inherit (pkgs) lib;
 
-  # Every fixture builds the way a consumer's package does: through
-  # buildNpmProject of a package set the overlay applies to.
   withOverlay = pkgs.extend overlay;
-  inherit (withOverlay) buildNpmProject;
+
+  # Every fixture builds the way a consumer's flake builds a project:
+  # through the builder of this flake's library, with a package set.
+  buildNpmProject = args: npm-purifier.buildNpmProject ({ inherit pkgs; } // args);
 
   # One package with a build script, a test script, a command, a
   # dependency and a dev dependency.
@@ -61,6 +67,41 @@ let
       lockFile = builtins.toFile "package-lock.json" (builtins.toJSON lock);
     };
   host = pkgs.stdenv.hostPlatform.system;
+
+  # The lockfile reader on a package-lock.json and an npm-purifier.lock.json.
+  readGitLock =
+    packageLock: purifierLock:
+    import ../nix/lib/lock.nix {
+      inherit lib purifier;
+      system = host;
+      lockFile = packageLock;
+      purifierLockFile = purifierLock;
+    };
+  gitPackageLock = builtins.toFile "package-lock.json" (builtins.toJSON gitLock);
+
+  # An npm-purifier.lock.json for a package-lock.json, with `git` (JSON
+  # text) as its entries, laid out and hashed as `npm-purifier lock` writes
+  # it: the SRI hash of the text with the hash left empty.
+  purifierLockOf =
+    packageLock: git:
+    let
+      blank = ''
+        {
+          "version": 3,
+          "hash": "",
+          "packageLockSha256": "${builtins.hashFile "sha256" packageLock}",
+          "git": ${git}
+        }
+      '';
+      hash = builtins.convertHash {
+        hash = builtins.hashString "sha256" blank;
+        hashAlgo = "sha256";
+        toHashFormat = "sri";
+      };
+    in
+    builtins.toFile "npm-purifier.lock.json" (
+      builtins.replaceStrings [ ''"hash": ""'' ] [ ''"hash": "${hash}"'' ] blank
+    );
 
   # Whether evaluating `value` deeply fails.
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
@@ -217,14 +258,62 @@ in
   # made for this package-lock.json.
   git-without-purifier-lock = evalCheck "git-without-purifier-lock" (fails (readLock host gitLock)
     .git) "a lockfile with a git dependency evaluated without npm-purifier.lock.json";
-  stale-purifier-lock = evalCheck "stale-purifier-lock" (fails
-    (import ../nix/lib/lock.nix {
-      inherit lib purifier;
-      system = host;
-      lockFile = builtins.toFile "package-lock.json" (builtins.toJSON gitLock);
-      purifierLockFile = ./fixtures/git/npm-purifier.lock.json;
-    }).git
-  ) "npm-purifier.lock.json of another package-lock.json evaluated";
+
+  # The checks of the purifier contract that need neither the network nor
+  # Nix itself. Each refused lockfile fails evaluation with a message that
+  # names `npm-purifier lock`; tests/errors.sh checks the messages.
+
+  # npm-purifier.lock.json made for another package-lock.json.
+  conformance-stale =
+    evalCheck "conformance-stale"
+      (fails (readGitLock gitPackageLock ./fixtures/git/npm-purifier.lock.json).git)
+      "npm-purifier.lock.json of another package-lock.json evaluated";
+
+  # npm-purifier.lock.json with a changed hash in it.
+  conformance-tampered =
+    let
+      tampered = builtins.toFile "npm-purifier.lock.json" (
+        builtins.replaceStrings
+          [ "sha256-CumxwVYdwi+5XAhb2esa2or74nV49zo+O9dHW6GPPkI=" ]
+          [ "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" ]
+          (builtins.readFile ./fixtures/git/npm-purifier.lock.json)
+      );
+    in
+    evalCheck "conformance-tampered" (fails (readGitLock ./fixtures/git/package-lock.json tampered)
+      .git) "npm-purifier.lock.json with a changed hash evaluated";
+
+  # npm-purifier.lock.json without an entry for a git dependency.
+  conformance-missing = evalCheck "conformance-missing" (fails (readGitLock gitPackageLock (
+    purifierLockOf gitPackageLock "{}"
+  )).git) "a git dependency without an entry in npm-purifier.lock.json evaluated";
+
+  # npm-purifier.lock.json that is not JSON.
+  conformance-malformed = evalCheck "conformance-malformed" (fails (readGitLock gitPackageLock (
+    builtins.toFile "npm-purifier.lock.json" "not json"
+  )).git) "an npm-purifier.lock.json that is not JSON evaluated";
+
+  # A project whose source holds no npm-purifier.lock.json builds from one
+  # kept outside it.
+  conformance-external =
+    let
+      external = buildNpmProject {
+        src = builtins.path {
+          path = ./fixtures/git;
+          name = "git-fixture-without-purifier-lock";
+          filter = path: _: baseNameOf path != "npm-purifier.lock.json";
+        };
+        lockFile = ./fixtures/git/npm-purifier.lock.json;
+        gitCheckouts.${cloneResolved} = repositories.checkout;
+      };
+    in
+    pkgs.runCommand "conformance-external-check"
+      {
+        nativeBuildInputs = [ external.packages.git-fixture ];
+      }
+      ''
+        git-fixture | grep -qx 'clone: cloned, prepared (is-number says true), and from the submodule'
+        touch $out
+      '';
 
   # The tarball Nix builds is one `npm publish` takes.
   publish =
@@ -240,18 +329,21 @@ in
         touch $out
       '';
 
-  # `npm nix-publish` builds the tarball the builder builds, also for a
-  # project in a directory of a larger tree.
+  # `npm-purifier publish` builds the tarball the builder builds, also for
+  # a project in a directory of a larger tree.
   publish-build =
     let
-      published = import ../nix/lib/publish.nix {
-        pkgs = withOverlay;
-        lockFile = ./fixtures/paths/app/package-lock.json;
+      published = import ../nix/lib/project.nix {
+        inherit pkgs;
+        lib = lib // {
+          inherit npm-purifier;
+        };
+        packageLock = ./fixtures/paths/app/package-lock.json;
       };
     in
     evalCheck "publish-build" (
       published.packages.paths-fixture.tarball.outPath == paths.packages.paths-fixture.tarball.outPath
-    ) "npm nix-publish builds another tarball than buildNpmProject";
+    ) "npm-purifier publish builds another tarball than buildNpmProject";
 
   # What the wrapper builds for a project (`interactive`) holds the cache
   # the sandboxed build of the project uses, and the environment setup.
@@ -264,8 +356,9 @@ in
     touch $out
   '';
 
-  # The wrapper itself builds.
+  # The commands build.
   npm = withOverlay.npm-purifier.npm;
+  npm-purifier-command = withOverlay.npm-purifier.npm-purifier;
 
   # commander.js builds, and its tests and type checks pass; the package
   # depends on them.
@@ -283,7 +376,7 @@ in
         touch $out
       '';
 
-  # The unit tests of the lock run (pkgs/npm/nix-lock.test.js).
+  # The unit tests of the lock run (pkgs/npm-purifier/lock.test.js).
   lock-run-units =
     pkgs.runCommand "lock-run-units"
       {
@@ -291,9 +384,9 @@ in
         NPM_PURIFIER_NPM_MODULES = "${pkgs.nodejs}/lib/node_modules/npm/node_modules";
       }
       ''
-        cp ${../pkgs/npm/nix-lock.js} nix-lock.js
-        cp ${../pkgs/npm/nix-lock.test.js} nix-lock.test.js
-        node --test nix-lock.test.js
+        cp ${../pkgs/npm-purifier/lock.js} lock.js
+        cp ${../pkgs/npm-purifier/lock.test.js} lock.test.js
+        node --test lock.test.js
         touch $out
       '';
 
@@ -320,28 +413,10 @@ in
       ]
     ) "the cache path of an integrity is not the one npm uses";
 
-  # Lockfiles the reader refuses, each with a message that names the
-  # problem: a git dependency the purifier lockfile lacks, a lockfile older
-  # than npm 7, a source that is neither a tarball URL, a repository nor a
-  # path, and a tarball without an integrity.
-  missing-entry =
-    let
-      purifierLock = builtins.toFile "npm-purifier.lock.json" (
-        builtins.toJSON {
-          version = 1;
-          packageLockSha256 = builtins.hashString "sha256" (builtins.toJSON gitLock);
-          git = { };
-        }
-      );
-    in
-    evalCheck "missing-entry" (fails
-      (import ../nix/lib/lock.nix {
-        inherit lib purifier;
-        system = host;
-        lockFile = builtins.toFile "package-lock.json" (builtins.toJSON gitLock);
-        purifierLockFile = purifierLock;
-      }).git
-    ) "a git dependency without an entry in npm-purifier.lock.json evaluated";
+  # package-lock.json files the reader refuses, each with a message that
+  # names the problem: one older than npm 7, a source that is neither a
+  # tarball URL, a repository nor a path, and a tarball without an
+  # integrity.
   old-lockfile = evalCheck "old-lockfile" (fails
     (readLock host {
       lockfileVersion = 1;
@@ -367,11 +442,11 @@ in
     let
       tampered = buildNpmProject {
         src = ./fixtures/app;
-        fetchurl = { name, ... }: pkgs.writeText name "not the tarball";
+        fetchers.fetchurl = { name, ... }: pkgs.writeText name "not the tarball";
       };
     in
     pkgs.runCommand "tampered-tarball-check" { } ''
-      grep -q 'seems to be corrupted' ${pkgs.testers.testBuildFailure tampered.build}/testBuildFailure.log
+      grep -q 'seems to be corrupted' ${pkgs.testers.testBuildFailure tampered.release}/testBuildFailure.log
       touch $out
     '';
 
