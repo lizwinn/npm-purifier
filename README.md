@@ -77,6 +77,12 @@ lockfiles cannot be used, which is the same shape every purifier returns.
 
 ## Development loop
 
+The purifier contract runs the development loop through the build tool's
+own command. npm has no plugin mechanism through which npm-purifier could
+give that command the locked downloads, so the loop runs through the
+`npm` wrapper that `nix develop github:nix-purifiers/npm-purifier` puts on
+`PATH`. The wrapper takes npm's own commands and arguments.
+
 The `npm` wrapper passes every command to npm. The commands that change
 the lockfile (`install`, `update`, `uninstall` and their aliases) resolve
 against the registry as npm does, and then run `npm-purifier lock`, so
@@ -108,7 +114,10 @@ uploaded. Nothing is packed outside the sandbox.
 
 `npm-purifier prefetch` builds the npm cache of every locked tarball and
 git dependency in the Nix store, with a garbage-collector root at
-`.npm-purifier/dependencies`. The wrapper runs it on its own when either
+`.npm-purifier/dependencies` in the project. The contract puts that root
+beside the purifier lockfile. npm-purifier keeps it in the project even
+when `npm-purifier.lock.json` lies outside, because npm reads its cache
+from there. The wrapper runs `prefetch` on its own when either
 lockfile changed since the last prefetch. After the prefetch, the
 wrapper runs npm with `offline` set and a registry that nothing needs to
 answer: `npm ci`, the build scripts and the tests read only what the
