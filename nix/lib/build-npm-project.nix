@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: MIT
 #
 # buildNpmProject: sandboxed builds of an npm project, from the
-# package-lock.json at its root. The project needs no Nix files of its
-# own: the lock names every tarball the install fetches, with its
-# integrity, and every package of the project (the root and its
-# workspaces).
+# package-lock.json at its root, and from the npm-purifier.lock.json that
+# `npm nix-lock` writes beside it when the project has git dependencies.
+# The project needs no Nix files of its own: the lockfiles name every
+# tarball and repository the install fetches, and every package of the
+# project (the root, its workspaces and the local directories it depends
+# on).
 #
 # The file is a package for callPackage: the first argument set is what it
 # takes from the package set, and the result is the builder. The
@@ -17,7 +19,8 @@
 # and `buildNpmProject.override` replaces what it takes from the set. The
 # builder returns
 #
-#   dependencies      the npm cache content of every locked tarball
+#   cache             the content of npm's cache: every locked tarball, and
+#                     the archives of git dependencies
 #   build             the project after `npm ci`, its build scripts and
 #                     `npm pack`: one tarball per package of the project
 #   productionModules the production dependencies (`npm ci --omit=dev`)
@@ -29,16 +32,27 @@
   lib,
   stdenv,
   callPackage,
+  writeShellScript,
+  runtimeShell,
   nodejs,
   python3,
+  git,
 }:
 {
-  # The root of the npm project.
+  # The source tree. It holds the project and every local directory the
+  # project depends on.
   src,
+  # The directory of the project inside `src`, where package.json and
+  # package-lock.json lie. The default is the root of `src`.
+  projectDir ? "",
   # The lockfile; the default is the one npm writes at the project root.
-  lockFile ? src + "/package-lock.json",
+  lockFile ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json",
+  # The lockfile of the git dependencies, which `npm nix-lock` writes
+  # beside package-lock.json.
+  purifierLockFile ? dirOf lockFile + "/npm-purifier.lock.json",
   # The Node.js that runs npm and the project's scripts, and that the
-  # packages' commands run on.
+  # packages' commands run on. Git dependencies with a prepare script need
+  # the Node.js of nixpkgs, whose npm prepares them inside the sandbox.
   node ? nodejs,
   # The package scripts that build the project, run in order before the
   # packages are packed. A script the root package defines runs at the
@@ -53,16 +67,29 @@
   buildInputs ? [ ],
   # Replaces the fetcher of the locked tarballs.
   fetchurl ? null,
-  # Filters the project root before it is copied into the store, as the
+  # Checkouts that replace the fetches of git dependencies, by their
+  # `resolved` in the lockfile: for a repository the sandbox cannot reach,
+  # such as a private one, a checkout fetched with the user's credentials
+  # (builtins.fetchGit). A dependency npm downloads as an archive (from
+  # GitHub, GitLab, Bitbucket or sourcehut) takes a plain checkout; one npm
+  # clones takes a repository that holds the commit, with its submodules
+  # checked out.
+  gitCheckouts ? { },
+  # Filters the source tree before it is copied into the store, as the
   # `filter` of builtins.path. The default leaves out installed
   # dependencies, version control and Nix result links.
   srcFilter ? null,
 }:
 let
-  lock = import ./lock.nix {
-    inherit lib lockFile;
-    platform = stdenv.hostPlatform;
+  cache = callPackage ./cache.nix {
+    inherit
+      lockFile
+      purifierLockFile
+      fetchurl
+      gitCheckouts
+      ;
   };
+  inherit (cache) lock;
 
   defaultSrcFilter =
     path: type:
@@ -77,21 +104,36 @@ let
     filter = if srcFilter != null then srcFilter else defaultSrcFilter;
   };
 
-  dependencies = callPackage ./dependencies.nix (
-    {
-      inherit (lock) downloads;
-    }
-    // lib.optionalAttrs (fetchurl != null) { inherit fetchurl; }
-  );
+  # A directory relative to the project root, as a path relative to the
+  # root of `src`. A local package outside `src` cannot take part in the
+  # build.
+  inSrc =
+    dir:
+    let
+      parts = lib.filter (p: p != "" && p != ".") (lib.splitString "/" "${projectDir}/${dir}");
+      step =
+        acc: p:
+        if p != ".." then
+          acc ++ [ p ]
+        else if acc == [ ] then
+          throw "npm-purifier: the local package ${dir} lies outside src; pass a src that contains it and the project's directory inside it as projectDir."
+        else
+          lib.init acc;
+    in
+    lib.concatStringsSep "/" (lib.foldl' step [ ] parts);
 
   # The file name of a package's tarball in `build`.
   tarballName = p: (builtins.replaceStrings [ "@" "/" ] [ "" "__" ] p.name) + ".tgz";
 
   # The setup shared by every build: npm runs offline against a cache whose
-  # content is the locked tarballs. npm writes index entries, logs and the
-  # tarballs `npm pack` makes into the cache, so the cache is a writable
-  # tree of links to the tarballs in the store.
+  # content is the locked tarballs and git archives. npm writes index
+  # entries, logs and the tarballs `npm pack` makes into the cache, so the
+  # cache is a writable tree of links to the store. The build starts at
+  # the root of `src` and works in the project's directory; `srcRoot`
+  # names the root.
   npmSetup = ''
+    srcRoot="$PWD"
+    cd ${lib.escapeShellArg (if projectDir == "" then "." else projectDir)}
     export HOME="$TMPDIR/home"
     export npm_config_cache="$TMPDIR/npm-cache"
     export npm_config_offline=true
@@ -103,18 +145,44 @@ let
     # that it is not one of npm's own settings.
     export npm_config_nodedir=${node}
     mkdir -p "$HOME" "$npm_config_cache/_cacache"
-    cp -rs --no-preserve=mode ${dependencies}/. "$npm_config_cache/_cacache"
+    cp -rs --no-preserve=mode ${cache.tree}/. "$npm_config_cache/_cacache"
+    ${cache.environment}
   '';
 
-  # Installs the locked dependencies. The sandbox has no /usr/bin/env, so
-  # the dependencies' scripts get their interpreters patched between the
-  # install and the run of their install scripts.
+  # npm runs every package script as `<script-shell> -c <command>`, with
+  # the node_modules/.bin directory of each directory upwards on PATH. The
+  # sandbox has no /usr/bin/env, so this shell gives the commands in those
+  # directories absolute interpreters before it runs the script. The
+  # install cannot patch them all beforehand: npm prepares git
+  # dependencies while it installs, in directories of its own.
+  scriptShell = writeShellScript "npm-purifier-script-shell" ''
+    dir="$PWD"
+    while :; do
+      for bin in "$dir"/node_modules/.bin/*; do
+        [ -e "$bin" ] || continue
+        target="$(readlink -f "$bin")"
+        IFS= read -r first < "$target" || continue
+        case "$first" in
+          "#!/usr/bin/env "*)
+            interpreter="''${first#\#!/usr/bin/env }"
+            interpreter="''${interpreter%% *}"
+            if absolute="$(command -v "$interpreter")"; then
+              sed -i "1s|^#!/usr/bin/env $interpreter|#!$absolute|" "$target"
+            fi
+            ;;
+        esac
+      done
+      [ "$dir" = / ] && break
+      dir="$(dirname "$dir")"
+    done
+    exec ${runtimeShell} "$@"
+  '';
+
+  # Installs the locked dependencies and runs their install scripts. npm
+  # prepares git dependencies during the install only when scripts run.
   npmInstall = flags: ''
-    npm ci --ignore-scripts ${lib.escapeShellArgs flags}
-    while IFS= read -r -d "" dir; do
-      patchShebangs "$dir" > /dev/null
-    done < <(find . -name node_modules -type d -prune -print0)
-    npm rebuild
+    export npm_config_script_shell=${scriptShell}
+    npm ci ${lib.escapeShellArgs flags}
   '';
 
   # Runs package script $1 at the root when the root defines it, and in
@@ -131,10 +199,12 @@ let
 
   ownPackages = builtins.attrValues lock.packages;
 
+  inputs = [ node ] ++ lib.optional cache.needsGit git ++ nativeBuildInputs;
+
   build = stdenv.mkDerivation {
     name = "npm-project-build";
     src = filteredSrc;
-    nativeBuildInputs = [ node ] ++ nativeBuildInputs;
+    nativeBuildInputs = inputs;
     inherit buildInputs;
     dontConfigure = true;
     buildPhase = ''
@@ -149,14 +219,15 @@ let
       runHook postBuild
     '';
     # `npm pack` runs the packages' prepack, prepare and postpack scripts,
-    # as `npm publish` does.
+    # as `npm publish` does. It packs the root, and every other package of
+    # the project from its directory.
     installPhase = ''
       runHook preInstall
       mkdir -p "$out"
       ${lib.concatMapStrings (p: ''
         packdir="$(mktemp -d)"
         npm pack --pack-destination "$packdir" ${
-          lib.optionalString (p.dir != "") "--workspace ${lib.escapeShellArg p.dir}"
+          lib.optionalString (p.dir != "") (lib.escapeShellArg "./${p.dir}")
         } > /dev/null
         mv "$packdir"/*.tgz "$out"/${lib.escapeShellArg (tarballName p)}
       '') ownPackages}
@@ -169,7 +240,7 @@ let
   productionModules = stdenv.mkDerivation {
     name = "npm-project-production-modules";
     src = filteredSrc;
-    nativeBuildInputs = [ node ] ++ nativeBuildInputs;
+    nativeBuildInputs = inputs;
     inherit buildInputs;
     dontConfigure = true;
     buildPhase = ''
@@ -180,28 +251,32 @@ let
       ]}
       runHook postBuild
     '';
-    # Every node_modules directory of the tree, at its place: the one at
-    # the root, and those npm put inside workspaces for versions that could
-    # not be hoisted.
+    # Every node_modules directory of the source tree, at its place
+    # relative to the root of `src`: the one of the project, and those npm
+    # put inside workspaces and local packages for versions that could not
+    # be hoisted.
     installPhase = ''
       runHook preInstall
       mkdir -p "$out"
+      cd "$srcRoot"
       find . -name node_modules -type d -prune -print0 | while IFS= read -r -d "" dir; do
         mkdir -p "$out/$(dirname "$dir")"
         cp -a "$dir" "$out/$dir"
       done
       runHook postInstall
     '';
-    # The links to the workspaces dangle here; each package replaces them
-    # with installed copies.
+    # The links to the project's own packages dangle here; each package
+    # replaces them with installed copies.
     dontFixup = true;
   };
+
+  projectModules = productionModules + lib.optionalString (projectDir != "") "/${inSrc ""}";
 
   # Package p installed the way a global `npm install` lays out a package:
   # lib/node_modules/<name> holds the package's files, and its production
   # dependencies lie beside it, where Node.js resolves them. The project's
-  # own packages lie there as installed copies too, so a workspace that
-  # depends on another finds it.
+  # own packages lie there as installed copies too, so a package that
+  # depends on another one of them finds it.
   mkPackage =
     p:
     stdenv.mkDerivation {
@@ -221,8 +296,8 @@ let
         modules="$out/lib/node_modules"
         mkdir -p "$modules" "$tarball"
         cp ${build}/${lib.escapeShellArg (tarballName p)} "$tarball/package.tgz"
-        if [ -d ${productionModules}/node_modules ]; then
-          cp -a ${productionModules}/node_modules/. "$modules/"
+        if [ -d ${projectModules}/node_modules ]; then
+          cp -a ${projectModules}/node_modules/. "$modules/"
           chmod -R u+w "$modules"
           rm -rf "$modules/.bin" "$modules/.package-lock.json"
         fi
@@ -232,8 +307,8 @@ let
           tar -xzf ${build}/${lib.escapeShellArg (tarballName o)} --strip-components=1 \
             -C "$modules"/${lib.escapeShellArg o.name}
           ${lib.optionalString (o.dir != "") ''
-            if [ -d ${productionModules}/${lib.escapeShellArg o.dir}/node_modules ]; then
-              cp -a ${productionModules}/${lib.escapeShellArg o.dir}/node_modules \
+            if [ -d ${productionModules}/${lib.escapeShellArg (inSrc o.dir)}/node_modules ]; then
+              cp -a ${productionModules}/${lib.escapeShellArg (inSrc o.dir)}/node_modules \
                 "$modules"/${lib.escapeShellArg o.name}/node_modules
             fi
           ''}
@@ -258,6 +333,7 @@ let
     };
 in
 {
-  inherit dependencies build productionModules;
+  inherit build productionModules;
+  cache = cache.tree;
   packages = lib.mapAttrs (_: mkPackage) lock.packages;
 }

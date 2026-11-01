@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 #
-# Runs every check of the flake: the fixture builds in the Nix sandbox,
-# the lockfile reader checks and the formatting check.
+# Runs every check: the flake's checks (the fixture builds in the Nix
+# sandbox, the lockfile reader, the publish step and the formatting), their
+# evaluation for every system, the lock run against the network, and the
+# `npm` wrapper offline.
 name: check
 
 on:
@@ -19,4 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
-      - run: nix flake check -L
+      - name: Flake checks
+        run: nix flake check -L
+      - name: Evaluation for every system
+        run: nix flake check --all-systems --no-build
+      - name: Lock run
+        run: tests/lock-run.sh
+      - name: Offline npm wrapper
+        run: tests/interactive.sh

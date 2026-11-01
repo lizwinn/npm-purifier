@@ -1,0 +1,14 @@
+{
+  "name": "paths-fixture",
+  "version": "1.0.0",
+  "description": "A fixture with the dependency sources that are neither the registry nor git: a directory outside the project, a tarball inside it, and a tarball URL.",
+  "license": "MIT",
+  "bin": {
+    "paths-fixture": "cli.js"
+  },
+  "dependencies": {
+    "@fixture/shared": "file:../shared",
+    "vendored": "file:vendor/vendored-1.0.0.tgz",
+    "is-odd": "https://registry.npmjs.org/is-odd/-/is-odd-3.0.1.tgz"
+  }
+}

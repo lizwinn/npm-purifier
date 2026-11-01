@@ -6,7 +6,8 @@
 # $npm_config_cache/_cacache/content-v2.
 #
 # This file knows nothing of npm: it takes download entries of the shape
-# { path, url, hash } and nothing else.
+# { path, url, mirrors, hash } and nothing else. `mirrors` lists other URLs
+# that serve the same file.
 {
   lib,
   runCommand,
@@ -30,7 +31,8 @@ let
   fetch =
     d:
     fetchurl {
-      inherit (d) url hash;
+      urls = [ d.url ] ++ d.mirrors;
+      inherit (d) hash;
       name = storeName d.url;
     };
 in
