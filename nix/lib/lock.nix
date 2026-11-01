@@ -6,7 +6,9 @@
 #   downloads   one entry per registry tarball the install needs, as
 #               { path, url, hash }: `path` is where the tarball's content
 #               lies in npm's cache (_cacache/<path>), `url` is the lock's
-#               `resolved` and `hash` the lock's SRI `integrity`
+#               `resolved` and `hash` the lock's SRI `integrity`. An entry
+#               also carries the lock's `os`, `cpu` and `libc` lists where
+#               the lock has them.
 #   packages    the project's own packages (the root and its workspaces), by
 #               package name, as { name, version, dir, bin }; a root that
 #               declares workspaces is one only when it has commands. `dir` is the
@@ -19,10 +21,10 @@
 {
   lib,
   lockFile,
-  # The platform the install runs for, as a nixpkgs platform. Optional
-  # packages for other operating systems or CPUs (such as the
-  # per-platform binaries of esbuild) are left out of `downloads`, as npm
-  # leaves them out of the install.
+  # The platform the install runs for, as a nixpkgs platform. Packages for
+  # other operating systems or CPUs (such as the per-platform binaries of
+  # esbuild) are left out of `downloads`, as npm leaves them out of the
+  # install.
   platform,
 }:
 let
@@ -98,7 +100,12 @@ let
         path = "content-v2/${algorithm}/${builtins.substring 0 2 hex}/${builtins.substring 2 2 hex}/${builtins.substring 4 (-1) hex}";
         url = resolved;
         hash = sri;
-      };
+      }
+      // lib.getAttrs (builtins.filter (f: entry ? ${f}) [
+        "os"
+        "cpu"
+        "libc"
+      ]) entry;
 
   # Installed packages that come from elsewhere: not links to the
   # project's own directories, not bundled inside another tarball, and not
@@ -111,20 +118,21 @@ let
     && !(entry.inBundle or false)
     && entry ? resolved
     && !lib.hasPrefix "file:" entry.resolved
-    && (entry.optional or false -> forPlatform entry)
   ) packages;
 
   # The same tarball can be installed at several places in the tree; the
-  # cache holds it once.
-  downloads = builtins.attrValues (
-    lib.listToAttrs (
-      lib.mapAttrsToList (
-        key: entry:
-        let
-          d = remote key entry;
-        in
-        lib.nameValuePair d.path d
-      ) fetched
+  # cache holds it once. Tarballs for other platforms stay out.
+  downloads = builtins.filter forPlatform (
+    builtins.attrValues (
+      lib.listToAttrs (
+        lib.mapAttrsToList (
+          key: entry:
+          let
+            d = remote key entry;
+          in
+          lib.nameValuePair d.path d
+        ) fetched
+      )
     )
   );
 
