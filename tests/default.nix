@@ -101,7 +101,9 @@ in
       '';
 
   # The command-line workspace finds the library workspace and the native
-  # binary of esbuild; the library installs on its own.
+  # binary of esbuild; the library installs on its own. The workspace's
+  # build script ran the esbuild command, a Node.js script whose first line
+  # is `#!/usr/bin/env node`, in the sandbox.
   workspaces =
     pkgs.runCommand "workspaces-check"
       {
@@ -112,6 +114,7 @@ in
       }
       ''
         greet 42 | grep -qx 'hello, number 42 (esbuild: let n = 1;)'
+        grep -qx 0.25.0 ${workspaces.packages.greet-cli}/lib/node_modules/greet-cli/esbuild-version.txt
         NODE_PATH=${
           workspaces.packages."@fixture/greeting"
         }/lib/node_modules node -e 'console.log(require("@fixture/greeting")("you"))' \
