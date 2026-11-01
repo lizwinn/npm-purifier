@@ -1,0 +1,6 @@
+target/
+/result*
+.bsp/
+.metals/
+.bloop/
+.idea/

@@ -1,0 +1,13 @@
+{
+  "name": "workspaces-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A workspaces fixture: a command-line package that depends on a library in the same project and on esbuild.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "is-odd": "3.0.1"
+  }
+}

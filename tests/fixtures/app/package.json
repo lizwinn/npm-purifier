@@ -1,0 +1,23 @@
+{
+  "name": "hello-npm",
+  "version": "1.0.0",
+  "description": "A single-package fixture: a build script, a command and one dependency.",
+  "license": "MIT",
+  "bin": {
+    "hello-npm": "bin/hello.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node bin/hello.js | grep -q 'built by the build script'"
+  },
+  "dependencies": {
+    "chalk": "4.1.2"
+  },
+  "devDependencies": {
+    "is-odd": "3.0.1"
+  }
+}
