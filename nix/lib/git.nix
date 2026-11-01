@@ -34,7 +34,9 @@
 # The entries take the shape of the shared purifier library's git entries:
 # { path, git = { url, rev, submodules, leaveDotGit, commitObject }, hash }.
 # `hash` is the NAR hash of the plain checkout, and `leaveDotGit` asks for
-# the .git directory made from the checkout and `commitObject`.
+# the .git directory made from the checkout and `commitObject`, which is
+# { object, gitlinks }: the raw commit object, base64, and the submodule
+# entries of its tree as { path, rev }.
 {
   lib,
   runCommand,
@@ -110,8 +112,8 @@ let
       checkout = fetch resolved entry;
       # `dest` is shell text, so that it can name $out.
       make = dest: dir: repo: ''
-        make ${dest} ${checkout}/${lib.escapeShellArg dir} ${repo.rev} ${lib.escapeShellArg repo.commit} ${
-          lib.escapeShellArgs (map (l: "${l.path}=${l.rev}") repo.gitlinks)
+        make ${dest} ${checkout}/${lib.escapeShellArg dir} ${repo.rev} ${lib.escapeShellArg repo.commitObject.object} ${
+          lib.escapeShellArgs (map (l: "${l.path}=${l.rev}") repo.commitObject.gitlinks)
         }
       '';
     in
@@ -148,11 +150,7 @@ let
         unset GIT_DIR GIT_INDEX_FILE
       }
       mkdir -p "$out/modules"
-      ${make ''"$out/repository"'' "." {
-        inherit (entry.git) rev;
-        commit = entry.git.commitObject;
-        inherit (entry) gitlinks;
-      }}
+      ${make ''"$out/repository"'' "." entry.git}
       ${lib.concatMapStrings (s: make ''"$out/modules/"${lib.escapeShellArg s.path}'' s.path s) (
         entry.submodules or [ ]
       )}

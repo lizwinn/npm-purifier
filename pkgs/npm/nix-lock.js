@@ -113,15 +113,16 @@ const submodulesOf = (checkout, url, prefix = "") => {
   });
 };
 
-// The raw commit object of `rev` in the repository at `url`, base64, and
-// the submodule entries of its tree (gitlinks), as { path, rev }.
+// The commit `rev` of the repository at `url`, as { object, gitlinks }:
+// `object` is the raw commit object, base64, and `gitlinks` lists the
+// submodule entries of its tree as { path, rev }.
 const commitOf = (url, rev) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "npm-purifier-commit-"));
   try {
     const git = (...args) => execFileSync("git", ["-C", tmp, ...args]);
     git("init", "-q");
     git("fetch", "-q", "--depth=1", url, rev);
-    const commit = git("cat-file", "commit", rev).toString("base64");
+    const object = git("cat-file", "commit", rev).toString("base64");
     const gitlinks = git("ls-tree", "-r", rev)
       .toString("utf8")
       .split("\n")
@@ -130,7 +131,7 @@ const commitOf = (url, rev) => {
         const [meta, file] = line.split("\t");
         return { path: file, rev: meta.split(" ")[2] };
       });
-    return { commit, gitlinks };
+    return { object, gitlinks };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -138,17 +139,18 @@ const commitOf = (url, rev) => {
 
 // The submodules of the repository at `url`, recursively, with what a
 // build needs to make each of them again: its URL, its directory in the
-// checkout of the top repository, its commit and that commit's object.
-// `urls` lists every submodule of the checkout as submodulesOf finds them.
+// checkout of the top repository, its commit, and that commit as commitOf
+// gives it. `urls` lists every submodule of the checkout as submodulesOf
+// finds them.
 const repositoryOf = (url, rev, gitlinks, urls, prefix) =>
   gitlinks.flatMap((link) => {
     const dir = path.posix.join(prefix, link.path);
     const found = urls.find((s) => s.path === dir);
     if (!found) throw new Error(`${url} at ${rev} has a submodule at ${dir} without a URL in .gitmodules`);
-    const { commit, gitlinks: inner } = commitOf(found.url, link.rev);
+    const commitObject = commitOf(found.url, link.rev);
     return [
-      { url: found.url, path: dir, rev: link.rev, commit, gitlinks: inner },
-      ...repositoryOf(found.url, link.rev, inner, urls, dir),
+      { url: found.url, path: dir, rev: link.rev, commitObject },
+      ...repositoryOf(found.url, link.rev, commitObject.gitlinks, urls, dir),
     ];
   });
 
@@ -207,12 +209,11 @@ const lockGit = (resolved) => {
     // `leaveDotGit` asks the build for a .git directory, which it makes
     // from the checkout and `commitObject`. `hash` is the NAR hash of the
     // plain checkout.
-    const { commit, gitlinks } = commitOf(url, rev);
-    entry.git = { url, rev, submodules, leaveDotGit: true, commitObject: commit };
+    const commitObject = commitOf(url, rev);
+    entry.git = { url, rev, submodules, leaveDotGit: true, commitObject };
     entry.repository = url;
-    entry.gitlinks = gitlinks;
     const urls = submodulesOf(fetched.path, url);
-    entry.submodules = repositoryOf(url, rev, entry.gitlinks, urls, "");
+    entry.submodules = repositoryOf(url, rev, commitObject.gitlinks, urls, "");
   }
   entry.hash = fetched.hash;
   if (subdir) entry.subdir = subdir;

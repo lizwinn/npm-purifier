@@ -8,10 +8,12 @@
         "rev": "84da44035a4b19d689178a10610d75264775635b",
         "submodules": false,
         "leaveDotGit": true,
-        "commitObject": "dHJlZSA5ZGMyODYwYWZhZDNlZGNiNGNhZGViZjk0YTRjZTVmODZhYzM0Y2MwCnBhcmVudCAyZTAwMjk3MTFhMDI0ZTdiZWNkMDgwNmMwYWI4YzBlNzgwZjdmZjBkCmF1dGhvciBsdWtlIDxsdWthcy5zcGlla2VyQGdtYWlsLmNvbT4gMTc5MzE5MjY5NyArMDEwMApjb21taXR0ZXIgbHVrZSA8bHVrYXMuc3BpZWtlckBnbWFpbC5jb20+IDE3OTMxOTI2OTcgKzAxMDAKCnJlbWFyay1pcHRjLWNhcHRpb24gMS4xLjI6IGEgPGZpZ2NhcHRpb24+IG9uIHRoZSBsaW5lcyByaWdodCBhZnRlciBhIHBob3RvIGlzIHRoZSBwb3N0J3Mgb3duLCB0aGUgd2F5IHRvIGNhcHRpb24gYnkgaGFuZCBpbiBwbGFpbiAubWQsIGFuZCB3aW5zIG92ZXIgdGhlIHBob3RvJ3M6IHRoZSB0d28gYmVjb21lIG9uZSA8ZmlndXJlPiAoYSBvbmUtbGluZSA8ZmlnY2FwdGlvbj4gaW4gTURYIHRvbykuIEJlZm9yZSwgdGhlIHBob3RvIGdvdCBpdHMgZW1iZWRkZWQgY2FwdGlvbiBhcyB3ZWxsIGFuZCB0aGUgcG9zdCBzaG93ZWQgYm90aC4gVGVzdHM6IDE0IHBhc3M7IG9uIGNvZWxhY2FudGguY2ggb25seSB0aGUgUmFzcGJlcnJ5IFBpIGxvZ2dpbmcgcG9zdCBjaGFuZ2VzLCBub3cgY2FwdGlvbmVkIG9uY2UuCg=="
+        "commitObject": {
+          "object": "dHJlZSA5ZGMyODYwYWZhZDNlZGNiNGNhZGViZjk0YTRjZTVmODZhYzM0Y2MwCnBhcmVudCAyZTAwMjk3MTFhMDI0ZTdiZWNkMDgwNmMwYWI4YzBlNzgwZjdmZjBkCmF1dGhvciBsdWtlIDxsdWthcy5zcGlla2VyQGdtYWlsLmNvbT4gMTc5MzE5MjY5NyArMDEwMApjb21taXR0ZXIgbHVrZSA8bHVrYXMuc3BpZWtlckBnbWFpbC5jb20+IDE3OTMxOTI2OTcgKzAxMDAKCnJlbWFyay1pcHRjLWNhcHRpb24gMS4xLjI6IGEgPGZpZ2NhcHRpb24+IG9uIHRoZSBsaW5lcyByaWdodCBhZnRlciBhIHBob3RvIGlzIHRoZSBwb3N0J3Mgb3duLCB0aGUgd2F5IHRvIGNhcHRpb24gYnkgaGFuZCBpbiBwbGFpbiAubWQsIGFuZCB3aW5zIG92ZXIgdGhlIHBob3RvJ3M6IHRoZSB0d28gYmVjb21lIG9uZSA8ZmlndXJlPiAoYSBvbmUtbGluZSA8ZmlnY2FwdGlvbj4gaW4gTURYIHRvbykuIEJlZm9yZSwgdGhlIHBob3RvIGdvdCBpdHMgZW1iZWRkZWQgY2FwdGlvbiBhcyB3ZWxsIGFuZCB0aGUgcG9zdCBzaG93ZWQgYm90aC4gVGVzdHM6IDE0IHBhc3M7IG9uIGNvZWxhY2FudGguY2ggb25seSB0aGUgUmFzcGJlcnJ5IFBpIGxvZ2dpbmcgcG9zdCBjaGFuZ2VzLCBub3cgY2FwdGlvbmVkIG9uY2UuCg==",
+          "gitlinks": []
+        }
       },
       "repository": "https://codeberg.org/sailingthroughcode/remark-iptc-caption.git",
-      "gitlinks": [],
       "submodules": [],
       "hash": "sha256-2wGEVMAheNuGFxH8M3wnz8OmUDrs2T6wwGGa8pSX2Mk="
     },
@@ -21,22 +23,26 @@
         "rev": "c2eaed048fb06b92697c038ecaf17236a1a363fa",
         "submodules": true,
         "leaveDotGit": true,
-        "commitObject": "dHJlZSAwOWJmZmFkODY4NDNmMzJlZjM3OTdmMWM2ZWIyOGZmMjFjNGJhNTQ3CmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHBhY2thZ2UK"
+        "commitObject": {
+          "object": "dHJlZSAwOWJmZmFkODY4NDNmMzJlZjM3OTdmMWM2ZWIyOGZmMjFjNGJhNTQ3CmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHBhY2thZ2UK",
+          "gitlinks": [
+            {
+              "path": "vendor/sub",
+              "rev": "6cd15a5a8aa49da187ca80d7e5f0920f43d22aa0"
+            }
+          ]
+        }
       },
       "repository": "https://example.invalid/npm-purifier-clone.git",
-      "gitlinks": [
-        {
-          "path": "vendor/sub",
-          "rev": "6cd15a5a8aa49da187ca80d7e5f0920f43d22aa0"
-        }
-      ],
       "submodules": [
         {
           "url": "https://example.invalid/npm-purifier-sub.git",
           "path": "vendor/sub",
           "rev": "6cd15a5a8aa49da187ca80d7e5f0920f43d22aa0",
-          "commit": "dHJlZSAzNjNiMmIyODllODE2MGZhMTQ1MjJiOWM5NTA0NTM4MjhlMTgyMzNhCmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHN1Ym1vZHVsZSdzIG1vZHVsZQo=",
-          "gitlinks": []
+          "commitObject": {
+            "object": "dHJlZSAzNjNiMmIyODllODE2MGZhMTQ1MjJiOWM5NTA0NTM4MjhlMTgyMzNhCmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHN1Ym1vZHVsZSdzIG1vZHVsZQo=",
+            "gitlinks": []
+          }
         }
       ],
       "hash": "sha256-CumxwVYdwi+5XAhb2esa2or74nV49zo+O9dHW6GPPkI=",
