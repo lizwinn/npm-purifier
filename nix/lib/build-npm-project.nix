@@ -47,12 +47,11 @@
   # The directory of the project inside `src`, where package.json and
   # package-lock.json lie. The default is the root of `src`.
   projectDir ? "",
-  # npm's lockfile; the default is the one npm writes at the project root.
-  # A package-lock.json given from outside `src` replaces the one in it.
-  packageLock ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json",
   # npm-purifier.lock.json, which `npm-purifier lock` writes for the git
   # dependencies; the default is the one at the project root. A packaging
-  # flake keeps it outside `src` for a project its author does not change.
+  # flake keeps it outside `src` for a project its author does not change,
+  # and the file then also completes the entries of package-lock.json
+  # that lack a URL or an integrity.
   lockFile ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/npm-purifier.lock.json",
   # The Node.js that runs npm and the project's scripts, and that the
   # packages' commands run on. Git dependencies with a prepare script need
@@ -102,11 +101,32 @@ let
       inherit
         src
         projectDir
-        packageLock
         lockFile
         ;
     }
   );
+
+  # npm installs offline only from entries with a URL and an integrity.
+  # When an external npm-purifier.lock.json completes package-lock.json,
+  # the install reads a completed copy, which the build writes. The lock
+  # in memory has checked the file by then.
+  completions = builtins.seq lock (
+    if builtins.pathExists lockFile then (lib.importJSON lockFile).completions or { } else { }
+  );
+  completedPackageLock =
+    let
+      packageLock = lib.importJSON (
+        src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json"
+      );
+    in
+    pkgs.writeText "package-lock.json" (
+      builtins.toJSON (
+        packageLock
+        // {
+          packages = lib.mapAttrs (key: entry: entry // completions.${key} or { }) packageLock.packages;
+        }
+      )
+    );
 
   cache = pkgs.callPackage ./cache.nix {
     inherit fetchers gitCheckouts lock;
@@ -169,9 +189,9 @@ let
     mkdir -p "$HOME" "$npm_config_cache/_cacache"
     cp -rs --no-preserve=mode ${cache.tree}/. "$npm_config_cache/_cacache"
     ${cache.environment}
-    # npm installs from the lockfile this build read, which is the
-    # project's own unless `packageLock` names another.
-    cp --no-preserve=mode ${packageLock} package-lock.json
+    ${lib.optionalString (completions != { }) ''
+      cp --no-preserve=mode ${completedPackageLock} package-lock.json
+    ''}
   '';
 
   # npm runs every package script as `<script-shell> -c <command>`, with

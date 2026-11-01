@@ -187,6 +187,15 @@ submodule, which live in the repository itself. For a prepared dependency
 it adds the dependency's own lockfile. The commit and the directory in the
 repository come from `resolved`.
 
+A flake can package a project without changing it. The project's
+`package-lock.json` stays in the tree, and the flake keeps
+`npm-purifier.lock.json` outside it and passes that path to the builder
+as `lockFile`. `npm-purifier lock --lockfile <path>` then leaves the
+project's files as they are. When `package-lock.json` leaves out the URL
+or integrity of entries, the lock run records them in the `completions`
+of that external file, keyed by their place in `package-lock.json`. The
+build installs from a copy of `package-lock.json` completed with them.
+
 ## Real-world projects
 
 Two projects build in the flake's checks from pinned sources, and both
@@ -198,7 +207,10 @@ were also run through the wrapper offline:
   offline `npm ci` took 7 seconds.
 - [http-party/http-server](https://github.com/http-party/http-server): the
   lockfile left out the URL and integrity of 130 entries. That is why the
-  lock run completes such entries. Its tests run with `--jobs=1`, because
+  lock run completes such entries. The check builds it as a packaging
+  flake would, with its upstream tree unchanged and an external
+  `npm-purifier.lock.json` that holds the 130 completions. Its tests run
+  with `--jobs=1`, because
   parallel test files race for port 8000, which is why the builder takes
   `checkFlags`. All 532 assertions of its suite pass.
 

@@ -35,6 +35,13 @@
 // The run starts with `npm install --package-lock-only`, which brings
 // package-lock.json in step with package.json.
 //
+// An npm-purifier.lock.json outside the project root belongs to a flake
+// that packages the project without changing it. The run then leaves the
+// project's files as they are: it runs no `npm install`, and it records
+// the URL and integrity of incomplete entries in the `completions` of
+// npm-purifier.lock.json, by their key in package-lock.json, rather than
+// in package-lock.json.
+//
 // Usage: node lock.js <project root> [<npm-purifier.lock.json>]
 // The environment names npm's own modules (NPM_PURIFIER_NPM_MODULES) and
 // npm (NPM_PURIFIER_NPM).
@@ -319,21 +326,31 @@ const withHash = (text) => {
 
 const main = (root, purifierLockPath) => {
   const packageLockPath = path.join(root, "package-lock.json");
+  const external = path.dirname(purifierLockPath) !== path.resolve(root);
   // npm brings package-lock.json in step with package.json, resolving
   // against the registry; an up-to-date lockfile stays as it is.
-  execFileSync(npm, ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], {
-    cwd: root,
-    stdio: ["ignore", "inherit", "inherit"],
-  });
+  if (!external) {
+    execFileSync(npm, ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], {
+      cwd: root,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+  }
   const packageLock = readJson(packageLockPath);
-  const completed = completeLock(packageLock, registryDist);
+  const completed = completeLock(packageLock, registryDist).sort();
+  const completions = {};
   if (completed.length > 0) {
-    fs.writeFileSync(packageLockPath, JSON.stringify(packageLock, null, 2) + "\n");
+    if (external) {
+      for (const key of completed) {
+        const { resolved, integrity } = packageLock.packages[key];
+        completions[key] = { resolved, integrity };
+      }
+    } else {
+      fs.writeFileSync(packageLockPath, JSON.stringify(packageLock, null, 2) + "\n");
+    }
     const shown = completed.slice(0, 3).join(", ");
     const more = completed.length > 3 ? ` and ${completed.length - 3} more` : "";
-    process.stderr.write(
-      `npm-purifier: recorded the tarball URL and integrity of ${shown}${more} in package-lock.json\n`,
-    );
+    const where = external ? purifierLockPath : "package-lock.json";
+    process.stderr.write(`npm-purifier: recorded the tarball URL and integrity of ${shown}${more} in ${where}\n`);
   }
   const packageLockText = fs.readFileSync(packageLockPath);
   // A git dependency names its commit, so an entry made for the same
@@ -352,9 +369,9 @@ const main = (root, purifierLockPath) => {
     }
     if (git[resolved].packageLock) queue.push(...gitDependencies(git[resolved].packageLock));
   }
-  if (Object.keys(git).length === 0) {
+  if (Object.keys(git).length === 0 && Object.keys(completions).length === 0) {
     fs.rmSync(purifierLockPath, { force: true });
-    process.stderr.write("npm-purifier: package-lock.json has no git dependencies\n");
+    process.stderr.write("npm-purifier: package-lock.json records every download; no npm-purifier.lock.json needed\n");
     return;
   }
   const sorted = Object.fromEntries(Object.keys(git).sort().map((k) => [k, git[k]]));
@@ -363,6 +380,7 @@ const main = (root, purifierLockPath) => {
     hash: "",
     packageLockSha256: crypto.createHash("sha256").update(packageLockText).digest("hex"),
     git: sorted,
+    ...(Object.keys(completions).length > 0 ? { completions } : {}),
   };
   fs.writeFileSync(purifierLockPath, withHash(JSON.stringify(lock, null, 2) + "\n"));
   process.stderr.write(`npm-purifier: wrote ${purifierLockPath}\n`);

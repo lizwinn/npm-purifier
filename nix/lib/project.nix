@@ -32,7 +32,7 @@ let
   rootParts = lib.filter (p: p != "") (lib.splitString "/" (toString projectRoot));
 in
 lib.npm-purifier.buildNpmProject {
-  inherit pkgs packageLock lockFile;
+  inherit pkgs lockFile;
   src = up depth projectRoot;
   projectDir = lib.concatStringsSep "/" (lib.drop (lib.length rootParts - depth) rootParts);
 }

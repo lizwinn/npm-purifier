@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: MIT
 #
 # readLock: the lock in memory of an npm project (CONTRACT.md of the
-# purifier library). It reads package-lock.json (lockfileVersion 2 or 3)
-# and, when the project has git dependencies, the npm-purifier.lock.json
-# that `npm-purifier lock` writes beside it, at evaluation time. The
-# flake publishes it as `lib.npm-purifier.readLock`:
+# purifier library). It reads, at evaluation time, the package-lock.json
+# (lockfileVersion 2 or 3) of the project in `src` and, when that needs
+# it, the npm-purifier.lock.json that `npm-purifier lock` writes. That file
+# records the git dependencies. When it lies outside `src`, it also holds
+# `completions`: the URL and integrity of the entries of package-lock.json
+# that lack them, by their key. The flake publishes the reader as
+# `lib.npm-purifier.readLock`:
 #
 #   lib.npm-purifier.readLock { src = ./.; }
 #   # =>
@@ -52,16 +55,18 @@
 {
   # The source tree. It holds the project.
   src,
-  # The directory of the project inside `src`.
+  # The directory of the project inside `src`. Its package-lock.json is
+  # npm's lockfile.
   projectDir ? "",
-  # npm's lockfile; the default is the one npm writes at the project root.
-  packageLock ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json",
-  # The lockfile of the git dependencies. It is read only when the project
-  # has git dependencies.
+  # npm-purifier.lock.json. It is read only when the project has git
+  # dependencies or package-lock.json has incomplete entries. A flake that
+  # packages a project without changing it keeps the file outside `src`.
   lockFile ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/npm-purifier.lock.json",
 }:
 let
   inherit (lib) purifier;
+
+  packageLock = src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json";
 
   # The systems an entry with npm's platform filters is checked against:
   # those npm-purifier builds for, which are those `admits` of the
@@ -181,11 +186,19 @@ let
       && !lib.hasPrefix "file:" (entry.resolved or "")
     ) ps;
 
+  # `completed` gives the `resolved` and `integrity` of incomplete entries,
+  # by their key.
   tarballsOf =
-    name: ps:
-    lib.mapAttrsToList (key: entry: remote name key entry) (
+    name: completed: ps:
+    lib.mapAttrsToList (key: entry: remote name key (entry // completed.${key} or { })) (
       lib.filterAttrs (_: entry: !isGit (entry.resolved or "")) (installed ps)
     );
+
+  # The installed registry packages without a URL or an integrity. npm
+  # fills them in from the registry at install time, which a build cannot.
+  incomplete = lib.filterAttrs (
+    _: entry: !isGit (entry.resolved or "") && !(entry ? resolved && entry ? integrity)
+  ) (installed packages);
   gitOf =
     ps:
     lib.mapAttrsToList (_: entry: entry.resolved) (
@@ -212,16 +225,21 @@ let
       toHashFormat = "sri";
     };
 
-  # The git dependencies of npm-purifier.lock.json, by their `resolved`.
+  # npm-purifier.lock.json, read when package-lock.json needs it. Without
+  # the file, an incomplete entry names its own problem.
+  hasGit = gitOf packages != [ ];
   purifierLock =
     let
       read = readLockFile lockFile "run `npm-purifier lock` to write it again";
       stored = read.value.hash or "";
     in
-    if gitOf packages == [ ] then
+    if !hasGit && incomplete == { } then
       { value = { }; }
     else if !builtins.pathExists lockFile then
-      problemOf "${toString packageLock} has git dependencies, and ${lockName} does not exist; run `npm-purifier lock`."
+      if hasGit then
+        problemOf "${toString packageLock} has git dependencies, and ${lockName} does not exist; run `npm-purifier lock`."
+      else
+        { value = { }; }
     else if read ? problem then
       read
     else if (read.value.version or null) != formatVersion then
@@ -231,8 +249,9 @@ let
     else if (read.value.packageLockSha256 or null) != builtins.hashFile "sha256" packageLock then
       problemOf "${lockName} was made for another package-lock.json; run `npm-purifier lock`."
     else
-      { value = read.value.git or { }; };
-  git = purifierLock.value or { };
+      { inherit (read) value; };
+  git = purifierLock.value.git or { };
+  completions = purifierLock.value.completions or { };
 
   # A git dependency as git.nix takes it: the entry of the purifier
   # lockfile, with what its `resolved` tells. npm writes `resolved` as
@@ -280,17 +299,21 @@ let
   prepared = lib.mapAttrsToList (resolved: entry: {
     name = "the lockfile of ${resolved}";
     read = packagesOf "the lockfile of ${resolved}" { value = entry.packageLock; };
+    completed = { };
   }) (lib.filterAttrs (_: entry: entry ? packageLock) git);
 
   packageSets = [
     {
       name = toString packageLock;
       read = root;
+      completed = completions;
     }
   ]
   ++ prepared;
 
-  tarballs = lib.concatMap (set: tarballsOf set.name (set.read.value or { })) packageSets;
+  tarballs = lib.concatMap (
+    set: tarballsOf set.name set.completed (set.read.value or { })
+  ) packageSets;
   # With no usable npm-purifier.lock.json, every git dependency would
   # repeat its problem.
   gitDependencies =
