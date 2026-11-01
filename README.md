@@ -1,55 +1,95 @@
 # npm-purifier
 
-npm-purifier builds npm projects in the Nix sandbox from their
-`package-lock.json`, and runs npm on the developer's machine against the
-same locked dependencies, offline. The lockfile already names every
-registry tarball with its URL and integrity hash, and Nix reads it at
-evaluation time, so the project needs no generated Nix files. Git
-dependencies are the one source npm does not pin by a hash Nix can use.
-For those, `npm-purifier lock` writes `npm-purifier.lock.json` beside
-`package-lock.json`, and a project without git dependencies has no such
-file.
+npm-purifier keeps npm's development workflow on locked,
+Nix-resolved dependencies. Use the normal build and test commands in your
+working tree; building the project itself in the Nix sandbox is an
+optional next step.
+
+It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
+
+## Installation
+
+Install the integration into your Nix profile once:
+
+```sh
+nix profile install 'github:nix-purifiers/npm-purifier#npm' 'github:nix-purifiers/npm-purifier#npm-purifier'
+```
+
+This installs the `npm` wrapper. Use it for the locked
+development workflow below. The native lockfile can supply the complete
+download record; a separate purifier lock is needed for the cases described
+below. With no usable lockfile, the wrapper warns on standard error and
+runs the ordinary tool with impure resolution.
+
+`nix shell` makes an integration available temporarily instead of installing
+it. Keep using the activation steps below where a project environment or
+prefetched cache is required.
 
 ## Quickstart
 
-In the project's directory, enter a shell with the `npm` wrapper and the
-`npm-purifier` command, then lock and install:
+Install Nix, then run the following from your existing project's root.
+The setup prepares the locked dependencies and the integration that
+npm's normal commands use:
 
 ```zsh
 nix develop github:nix-purifiers/npm-purifier
 npm-purifier lock
 npm ci
+npm run build
+npm test
 ```
 
-We recommend committing both lockfiles to the project's repository:
-`package-lock.json`, and `npm-purifier.lock.json` when the lock run writes
-one. The builder and the commands look for them there by default. Add
-`.npm-purifier/` to `.gitignore`: it holds the project's prefetched
-dependencies.
+Commit the lockfiles that the lock command writes, including the build
+tool's own lockfile when it has one. Keep using the project's usual build,
+test and editor commands with this setup. Nix provides the locked
+dependencies; the development commands above run outside the Nix sandbox.
+No project Nix files are needed for this workflow.
 
-To build the project with Nix, run this in the project's directory. It adds
-no Nix file to the project. The overlay of the flake adds one attribute to
-the package set, the scope `npm-purifier`, which holds the builder
-`buildNpmProject` beside the commands:
+Sandboxed builds of the whole project are an optional
+[next step](#building-the-project-with-nix).
 
-```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.npm-purifier.buildNpmProject { src = ./.; }).packages.my-app'
-```
+## Development loop
 
-This uses the purifier's pinned nixpkgs, matching the lock command above.
-To build with ambient `<nixpkgs>` from your Nix search path instead,
-replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
-Both forms need no Nix files in your project. The build tool and language
-versions must match the lockfile; with ambient nixpkgs, lock with the
-purifier from that package set or pass a compatible toolchain to the builder.
+The purifier contract runs the development loop through the build tool's
+own command. npm has no plugin mechanism through which npm-purifier could
+give that command the locked downloads, so the loop runs through the
+`npm` wrapper that `nix develop github:nix-purifiers/npm-purifier` puts on
+`PATH`. The wrapper takes npm's own commands and arguments.
+
+The `npm` wrapper passes every command to npm. The commands that change
+the lockfile (`install`, `update`, `uninstall` and their aliases) resolve
+against the registry as npm does, and then run `npm-purifier lock`, so
+`npm-purifier.lock.json` stays in step with `package-lock.json`. Every
+other command (`ci`, `run`, `test`, `exec`) runs offline against the
+dependencies Nix prefetched.
+
+`npm-purifier lock` does three things:
+
+- It runs `npm install --package-lock-only`, which brings
+  `package-lock.json` in step with `package.json`.
+- It records the URL and integrity of lockfile entries that lack them, as
+  a later `npm install` would. Some lockfiles leave both out, and npm then
+  asks the registry at install time.
+- It writes `npm-purifier.lock.json` for the git dependencies, or removes
+  it when the project has none.
+
+`npm-purifier lock` keeps the versions `package-lock.json` resolves.
+`npm-purifier update` moves them: it runs `npm update` on every
+dependency, or on the packages named after it, and then locks as
+`npm-purifier lock` does, so both lockfiles change in one run.
+
+`npm-purifier publish` builds the package in the current directory with
+Nix and runs `npm publish` on that tarball. Further arguments go to
+`npm publish`, so `npm-purifier publish --dry-run` shows what would be
+uploaded. Nothing is packed outside the sandbox.
+
+## Building the project with Nix
+
+Once the native development workflow is working, you can also build and
+test the whole project in the Nix sandbox. For this step, keep a flake or
+another Nix build definition in the project's repository, or maintain an
+external packaging repository that points at its sources and lockfiles.
+The builder consumes the same lockfiles as the development workflow.
 
 The root package, each workspace and each local directory the project
 depends on become `packages.<name>`, installed with their production
@@ -104,40 +144,29 @@ lockfiles without building anything. It returns the downloads as
 `entries`, the packages as `outputs`, and, in `problems`, each reason the
 lockfiles cannot be used, which is the same shape every purifier returns.
 
-## Development loop
+### One-off builds without a project Nix file
 
-The purifier contract runs the development loop through the build tool's
-own command. npm has no plugin mechanism through which npm-purifier could
-give that command the locked downloads, so the loop runs through the
-`npm` wrapper that `nix develop github:nix-purifiers/npm-purifier` puts on
-`PATH`. The wrapper takes npm's own commands and arguments.
+For an ad hoc build, the builder can also be evaluated directly from the
+project root. Replace the example package name with one from your project:
 
-The `npm` wrapper passes every command to npm. The commands that change
-the lockfile (`install`, `update`, `uninstall` and their aliases) resolve
-against the registry as npm does, and then run `npm-purifier lock`, so
-`npm-purifier.lock.json` stays in step with `package-lock.json`. Every
-other command (`ci`, `run`, `test`, `exec`) runs offline against the
-dependencies Nix prefetched.
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.npm-purifier.buildNpmProject { src = ./.; }).packages.my-app'
+```
 
-`npm-purifier lock` does three things:
-
-- It runs `npm install --package-lock-only`, which brings
-  `package-lock.json` in step with `package.json`.
-- It records the URL and integrity of lockfile entries that lack them, as
-  a later `npm install` would. Some lockfiles leave both out, and npm then
-  asks the registry at install time.
-- It writes `npm-purifier.lock.json` for the git dependencies, or removes
-  it when the project has none.
-
-`npm-purifier lock` keeps the versions `package-lock.json` resolves.
-`npm-purifier update` moves them: it runs `npm update` on every
-dependency, or on the packages named after it, and then locks as
-`npm-purifier lock` does, so both lockfiles change in one run.
-
-`npm-purifier publish` builds the package in the current directory with
-Nix and runs `npm publish` on that tarball. Further arguments go to
-`npm publish`, so `npm-purifier publish --dry-run` shows what would be
-uploaded. Nothing is packed outside the sandbox.
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
 
 ## Working offline
 
@@ -265,6 +294,11 @@ the build installs from a copy of `package-lock.json` completed with
 them.
 
 ## Examples
+
+For day-to-day work on these projects, use the native-tool setup and
+commands in [Quickstart](#quickstart) and [Development loop](#development-loop).
+The Nix expressions below show optional sandboxed packaging of those
+projects.
 
 ### Working on commander.js
 

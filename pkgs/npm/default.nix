@@ -49,6 +49,10 @@ writeShellApplication {
       fi
       dir="$(dirname "$dir")"
     done
+    if [ -z "$root" ]; then
+      echo "npm-purifier: warning: no package-lock.json found; running npm impurely. Run \`npm-purifier lock\` to use Nix-resolved dependencies." >&2
+      exec "$npm" "$@"
+    fi
     lockfileArgs=()
     if [ -n "''${NPM_PURIFIER_LOCKFILE:-}" ]; then
       lockfileArgs=(--lockfile "$NPM_PURIFIER_LOCKFILE")
