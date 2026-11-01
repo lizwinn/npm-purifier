@@ -94,10 +94,6 @@ Nix and runs `npm publish` on that tarball. Further arguments go to
 `npm publish`, so `npm-purifier publish --dry-run` shows what would be
 uploaded. Nothing is packed outside the sandbox.
 
-On the examples below, `npm-purifier lock` with nothing to change took
-under a second, and an offline `npm ci` took 3 seconds for commander and 18
-seconds for http-server.
-
 ## Offline work
 
 `npm-purifier prefetch` builds the npm cache of every locked tarball and
@@ -186,6 +182,8 @@ npm-purifier refuses these:
   `git+<url>#<commit>` form.
 - A lockfile of npm 6 (`lockfileVersion` 1) stops the evaluation.
 
+npm-purifier builds for x86_64-linux and aarch64-linux.
+
 `npm-purifier.lock.json` holds only what `package-lock.json` cannot
 supply. Per git dependency, keyed by its `resolved`, it holds the Nix hash
 of the checkout, which npm does not record. For a hosted repository it
@@ -209,25 +207,92 @@ build installs from a copy of `package-lock.json` completed with them.
 
 ## Examples
 
-The flake's checks lock and build real projects from pinned sources, as
-examples of npm-purifier at work. These two show its builder and its
-offline loop:
+### Working on commander.js
 
-- [tj/commander.js](https://github.com/tj/commander.js): the build runs the
-  type checks, and all 1372 tests of its suite pass. Upgrading prettier
-  through the wrapper took 2 seconds plus the lock run, and the next
-  offline `npm ci` took 7 seconds.
-- [http-party/http-server](https://github.com/http-party/http-server): the
-  lockfile left out the URL and integrity of 130 entries. That is why the
-  lock run completes such entries. The check builds it as a packaging
-  flake would, with its upstream tree unchanged and an external
-  `npm-purifier.lock.json` that holds the 130 completions. Its tests run
-  with `--jobs=1`, because
-  parallel test files race for port 8000, which is why the builder takes
-  `checkFlags`. All 532 assertions of its suite pass.
+[commander.js](https://github.com/tj/commander.js) is a command-line
+library with a test suite. In a checkout of it, enter the shell, lock and
+work offline as usual:
 
-The tests run in a derivation of their own, so a package does not rebuild
-when only its tests change.
+```zsh
+git clone https://github.com/tj/commander.js
+cd commander.js
+nix develop github:nix-purifiers/npm-purifier
+npm-purifier lock
+npm ci
+npm test
+```
+
+commander.js has no git dependencies, so the lock run writes no
+`npm-purifier.lock.json`. A `flake.nix` in the checkout builds the package
+and runs the tests in the sandbox:
+
+```nix
+{
+  inputs.npm-purifier.url = "github:nix-purifiers/npm-purifier";
+  inputs.nixpkgs.follows = "npm-purifier/nixpkgs";
+
+  outputs = { nixpkgs, npm-purifier, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+      project = npm-purifier.lib.npm-purifier.buildNpmProject {
+        inherit pkgs;
+        src = ./.;
+      };
+    in
+    {
+      packages.${system}.default = project.packages.commander;
+      checks.${system}.tests = project.tests;
+    };
+}
+```
+
+### Packaging http-server without changing it
+
+[http-server](https://github.com/http-party/http-server) is a static file
+server. A flake of your own can package it while its repository stays as
+it is. The flake takes the source as an input and keeps
+`npm-purifier.lock.json` beside its own `flake.nix`:
+
+```nix
+{
+  inputs.npm-purifier.url = "github:nix-purifiers/npm-purifier";
+  inputs.nixpkgs.follows = "npm-purifier/nixpkgs";
+  inputs.http-server = {
+    url = "github:http-party/http-server";
+    flake = false;
+  };
+
+  outputs = { nixpkgs, npm-purifier, http-server, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+      project = npm-purifier.lib.npm-purifier.buildNpmProject {
+        inherit pkgs;
+        src = http-server;
+        lockFile = ./npm-purifier.lock.json;
+      };
+    in
+    {
+      packages.${system}.default = project.packages.http-server;
+    };
+}
+```
+
+Write the lockfile from a checkout of the commit that `flake.lock` pins,
+with the flake's directory beside it:
+
+```zsh
+git clone https://github.com/http-party/http-server
+cd http-server
+git checkout <the commit flake.lock pins for http-server>
+npm-purifier lock --lockfile ../http-server-flake/npm-purifier.lock.json
+```
+
+The lock run leaves the checkout as it is. The `package-lock.json` of
+http-server leaves out the URL and integrity of many entries, and the lock
+run records them in `npm-purifier.lock.json` beside `flake.nix`. Then
+`nix build` in that directory builds the server.
 
 ## Credits
 
