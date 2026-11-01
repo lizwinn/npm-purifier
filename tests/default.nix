@@ -8,6 +8,8 @@
   pkgs,
   # The flake's default package overlay, which adds buildNpmProject.
   overlay,
+  # The shared purifier library.
+  purifier,
 }:
 let
   inherit (pkgs) lib;
@@ -50,12 +52,12 @@ let
 
   # Evaluates the lockfile reader on a lockfile written inline.
   readLock =
-    platform: lock:
+    system: lock:
     import ../nix/lib/lock.nix {
-      inherit lib platform;
+      inherit lib system purifier;
       lockFile = builtins.toFile "package-lock.json" (builtins.toJSON lock);
     };
-  host = pkgs.stdenv.hostPlatform;
+  host = pkgs.stdenv.hostPlatform.system;
 
   # Whether evaluating `value` deeply fails.
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
@@ -196,14 +198,14 @@ in
           };
         };
       };
-      urls = platform: map (d: d.url) (readLock platform lock).downloads;
+      urls = system: map (d: d.url) (readLock system lock).downloads;
     in
     evalCheck "platform-filter" (
-      urls (lib.systems.elaborate "x86_64-linux") == [
+      urls "x86_64-linux" == [
         "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.0.tgz"
       ]
       &&
-        urls (lib.systems.elaborate "aarch64-linux") == [
+        urls "aarch64-linux" == [
           "https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.25.0.tgz"
         ]
     ) "the downloads for x86_64-linux and aarch64-linux are not the matching esbuild package";
@@ -214,8 +216,8 @@ in
     .git) "a lockfile with a git dependency evaluated without npm-purifier.lock.json";
   stale-purifier-lock = evalCheck "stale-purifier-lock" (fails
     (import ../nix/lib/lock.nix {
-      inherit lib;
-      platform = host;
+      inherit lib purifier;
+      system = host;
       lockFile = builtins.toFile "package-lock.json" (builtins.toJSON gitLock);
       purifierLockFile = ./fixtures/git/npm-purifier.lock.json;
     }).git
@@ -248,20 +250,16 @@ in
       published.packages.paths-fixture.tarball.outPath == paths.packages.paths-fixture.tarball.outPath
     ) "npm nix-publish builds another tarball than buildNpmProject";
 
-  # The wrapper evaluates nix/lib/interactive.nix for a project; the cache
-  # it builds is the one the sandboxed build of the project uses.
-  interactive =
-    let
-      wrapperCache =
-        lockFile:
-        (import ../nix/lib/interactive.nix {
-          inherit pkgs lockFile;
-        }).tree;
-    in
-    evalCheck "interactive" (
-      (wrapperCache ./fixtures/app/package-lock.json).outPath == app.cache.outPath
-      && (wrapperCache ./fixtures/paths/app/package-lock.json).outPath == paths.cache.outPath
-    ) "the cache the wrapper builds differs from the cache the build uses";
+  # What the wrapper builds for a project (`interactive`) holds the cache
+  # the sandboxed build of the project uses, and the environment setup.
+  interactive = pkgs.runCommand "interactive-check" { } ''
+    test "$(readlink ${app.interactive}/cache)" = ${app.cache}
+    test "$(readlink ${git.interactive}/cache)" = ${git.cache}
+    # The URLs of the Codeberg repository, the test repository and its
+    # submodule, local clones of submodules, and the store's owner.
+    grep -q GIT_CONFIG_COUNT=5 ${git.interactive}/environment
+    touch $out
+  '';
 
   # The wrapper itself builds.
   npm = withOverlay.npm-purifier.npm;
@@ -319,8 +317,8 @@ in
     in
     evalCheck "missing-entry" (fails
       (import ../nix/lib/lock.nix {
-        inherit lib;
-        platform = host;
+        inherit lib purifier;
+        system = host;
         lockFile = builtins.toFile "package-lock.json" (builtins.toJSON gitLock);
         purifierLockFile = purifierLock;
       }).git
@@ -358,24 +356,23 @@ in
       touch $out
     '';
 
-  # A commit object that is not the locked commit fails the build of the
-  # repository, with a message that names the commit.
+  # A submodule whose recorded commit object is not its locked commit fails
+  # the build of its repository, with a message that names the commit.
   tampered-commit =
     let
       entries =
         (import ../nix/lib/lock.nix {
-          inherit lib;
-          platform = host;
+          inherit lib purifier;
+          system = host;
           lockFile = ./fixtures/git/package-lock.json;
         }).git;
       clone = entries.${cloneResolved};
       tampered = clone // {
-        git = clone.git // {
-          rev = "0000000000000000000000000000000000000000";
-        };
+        submodules = map (s: s // { rev = "0000000000000000000000000000000000000000"; }) clone.submodules;
       };
       made =
         (pkgs.callPackage ../nix/lib/git.nix {
+          inherit purifier;
           git = {
             ${cloneResolved} = tampered;
           };

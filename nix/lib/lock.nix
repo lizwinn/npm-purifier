@@ -28,11 +28,14 @@
   lockFile,
   # The lockfile of the git dependencies. It is read only when it exists.
   purifierLockFile ? dirOf lockFile + "/npm-purifier.lock.json",
-  # The platform the install runs for, as a nixpkgs platform. Packages for
-  # other operating systems or CPUs (such as the per-platform binaries of
+  # The Nix system the install runs on. Packages for other operating
+  # systems, CPUs or C libraries (such as the per-platform binaries of
   # esbuild) are left out of `downloads`, as npm leaves them out of the
   # install.
-  platform,
+  system,
+  # The shared purifier library, whose `admits` reads npm's `os`, `cpu` and
+  # `libc` filters.
+  purifier,
 }:
 let
   # Reads a lockfile. Nix cannot catch a JSON parse error, and its message
@@ -72,38 +75,13 @@ let
 
   isGit = resolved: lib.hasPrefix "git+" resolved;
 
-  nodeOs =
-    if platform.isLinux then
-      "linux"
-    else if platform.isDarwin then
-      "darwin"
-    else
-      platform.parsed.kernel.name;
-  nodeCpu =
-    {
-      x86_64 = "x64";
-      aarch64 = "arm64";
-      i686 = "ia32";
-      armv7l = "arm";
-    }
-    .${platform.parsed.cpu.name} or platform.parsed.cpu.name;
-  nodeLibc = if platform.isMusl then "musl" else "glibc";
-
-  # npm's rule for the os, cpu and libc fields: a name that is listed
-  # allows, a name listed with a leading "!" forbids, and a list of only
-  # forbidden names allows the rest.
-  allows =
-    value: list:
-    let
-      denied = lib.elem "!${value}" list;
-      allowed = lib.filter (x: !lib.hasPrefix "!" x) list;
-    in
-    !denied && (allowed == [ ] || lib.elem value allowed);
   forPlatform =
     entry:
-    allows nodeOs (entry.os or [ ])
-    && allows nodeCpu (entry.cpu or [ ])
-    && (platform.isLinux -> allows nodeLibc (entry.libc or [ ]));
+    purifier.admits {
+      os = entry.os or null;
+      cpu = entry.cpu or null;
+      libc = entry.libc or null;
+    } system;
 
   remote =
     name: key: entry:

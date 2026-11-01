@@ -3,7 +3,8 @@
 # npm, wrapped so that in a project with a package-lock.json it installs
 # the locked tarballs and git dependencies from the Nix store, offline.
 # The wrapper builds the project's cache through Nix
-# (nix/lib/interactive.nix), under $XDG_CACHE_HOME/npm-purifier, and runs
+# (the `interactive` attribute of buildNpmProject, from this flake), under
+# $XDG_CACHE_HOME/npm-purifier, and runs
 # npm against that cache with `offline` set. It rebuilds the cache when a
 # lockfile changes.
 #
@@ -26,7 +27,6 @@
   coreutils,
   git,
   nix-prefetch-git,
-  path,
   stdenv,
 }:
 writeShellApplication {
@@ -42,8 +42,14 @@ writeShellApplication {
   ];
   text = ''
     npm=${lib.getExe' nodejs "npm"}
-    lib=${../../nix/lib}
-    nixpkgs='import ${path} { system = "${stdenv.hostPlatform.system}"; }'
+    # The nixpkgs this flake pins, with its overlay, which builds the cache
+    # and the packages with the same builder and library as a Nix build
+    # does.
+    flake=${../..}
+    pkgs="(let f = builtins.getFlake \"path:$flake\"; in import f.inputs.nixpkgs {
+      system = \"${stdenv.hostPlatform.system}\";
+      overlays = [ f.overlays.default ];
+    })"
 
     if [ "''${NPM_PURIFIER:-1}" = 0 ]; then
       exec "$npm" "$@"
@@ -97,8 +103,8 @@ writeShellApplication {
         tarball="$(
           NPM_PURIFIER_LOCK="$root/package-lock.json" NPM_PURIFIER_PACKAGE="$name" \
             nix build --impure --no-link --print-out-paths --expr "
-              (import $lib/publish.nix {
-                pkgs = $nixpkgs;
+              (import $flake/nix/lib/publish.nix {
+                pkgs = $pkgs;
                 lockFile = /. + builtins.getEnv \"NPM_PURIFIER_LOCK\";
               }).packages.\''${builtins.getEnv \"NPM_PURIFIER_PACKAGE\"}.tarball
             "
@@ -139,10 +145,13 @@ writeShellApplication {
       echo "npm-purifier: building the dependencies of $lock" >&2
       mkdir -p "$cache"
       NPM_PURIFIER_LOCK="$lock" nix build --impure --out-link "$cache/dependencies" --expr "
-        import $lib/interactive.nix {
-          pkgs = $nixpkgs;
+        let
           lockFile = /. + builtins.getEnv \"NPM_PURIFIER_LOCK\";
-        }
+        in
+        ($pkgs.buildNpmProject {
+          src = dirOf lockFile;
+          inherit lockFile;
+        }).interactive
       "
       # npm writes index entries, logs and packed tarballs into its cache,
       # so the cache is a writable tree of links into the store.

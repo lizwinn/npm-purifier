@@ -10,17 +10,18 @@
 #   - from any other repository, it clones the repository with git, checks
 #     out the commit and updates the submodules.
 #
-# For the first, `cache` holds each archive, packed in Nix from a checkout
-# of the commit, with the index entry that makes npm's HTTP cache answer
-# the archive URL with it. For the second, `gitConfig` maps each
-# repository URL and submodule URL to a repository in the store that holds
-# the commit. A fetch that keeps the .git directory has no stable hash,
-# because git packs objects differently from run to run, so the build
-# makes each repository from a plain checkout and the raw commit object
-# that `npm nix-lock` recorded: it writes the checkout's files and
-# submodule entries as the commit's tree, writes the commit object, checks
-# that the object's ID is the locked commit, and marks the repository
-# shallow at that commit, so git looks for no parents.
+# Each dependency is a git entry of the shared purifier library,
+# { path, git = { url, rev, submodules, leaveDotGit, commitObject }, hash },
+# which the library fetches. For the first way, `cache` holds each archive,
+# packed in Nix from the checkout, with the index entry that makes npm's
+# HTTP cache answer the archive URL with it. For the second, the entry has
+# `leaveDotGit`, so the library rebuilds the repository's .git directory
+# from the checkout and the recorded commit object; npm clones that
+# repository. npm then clones each submodule from its own URL, so the
+# entry also lists the submodules with their commits (`submodules`), and
+# `repositories` makes a repository for each from its directory in the
+# checkout, the same way. `gitConfig` maps every repository URL and
+# submodule URL to its repository in the store.
 #
 # npm prepares a git dependency that has a prepare, build or install
 # script: it installs the dependency's own dependencies and runs the
@@ -30,21 +31,16 @@
 # `prefetchNpmDeps` is the hook below: it places the lockfile that
 # `npm nix-lock` made for a dependency whose repository has none. An
 # archive carries that lockfile inside already.
-#
-# The entries take the shape of the shared purifier library's git entries:
-# { path, git = { url, rev, submodules, leaveDotGit, commitObject }, hash }.
-# `hash` is the NAR hash of the plain checkout, and `leaveDotGit` asks for
-# the .git directory made from the checkout and `commitObject`, which is
-# { object, gitlinks }: the raw commit object, base64, and the submodule
-# entries of its tree as { path, rev }.
 {
   lib,
+  pkgs,
   runCommand,
   writeText,
   writeShellScript,
-  fetchgit,
   gitMinimal,
   openssl,
+  # The shared purifier library.
+  purifier,
   # The git dependencies, by their `resolved`, as lock.nix returns them.
   git,
   # Plain checkouts, with submodules checked out where npm clones them,
@@ -52,16 +48,23 @@
   checkouts ? { },
 }:
 let
-  fetch =
-    resolved: entry:
-    checkouts.${resolved} or (fetchgit {
-      inherit (entry.git) url rev;
-      inherit (entry) hash;
-      fetchSubmodules = entry.git.submodules;
-      # The hash is the NAR hash of the plain checkout. `repositories`
-      # makes a .git directory from it and `commitObject`.
-      leaveDotGit = false;
-    });
+  # The checkouts by URL and commit, for the fetcher the library calls.
+  replacements = lib.mapAttrs' (
+    resolved: checkout:
+    lib.nameValuePair "${git.${resolved}.git.url}#${git.${resolved}.git.rev}" checkout
+  ) (lib.filterAttrs (resolved: _: git ? ${resolved}) checkouts);
+
+  fetchEntry = purifier.fetchEntry {
+    inherit pkgs;
+    fetchgit = args: replacements."${args.url}#${args.rev}" or (pkgs.fetchgit args);
+  };
+
+  # The library entry of a dependency: lock.nix keeps the entry's own
+  # fields, and the library needs only these.
+  entryOf = entry: {
+    path = "git/${entry.git.rev}";
+    inherit (entry) git hash;
+  };
 
   archives = lib.filterAttrs (_: entry: entry ? archive) git;
   clones = lib.filterAttrs (_: entry: !(entry ? archive)) git;
@@ -77,9 +80,9 @@ let
   cache = runCommand "npm-purifier-git-archives" { nativeBuildInputs = [ openssl ]; } ''
     mkdir -p "$out"
     ${lib.concatStrings (
-      lib.mapAttrsToList (resolved: entry: ''
+      lib.mapAttrsToList (_: entry: ''
         work="$(mktemp -d)"
-        cp -r ${fetch resolved entry} "$work/package"
+        cp -r ${fetchEntry (entryOf entry)} "$work/package"
         chmod -R u+w "$work/package"
         ${lib.optionalString (injected entry) ''
           cp ${lockFileOf entry} "$work/package/"${lib.escapeShellArg (subdirOf entry)}/package-lock.json
@@ -103,24 +106,25 @@ let
     )}
   '';
 
-  # The repositories of a cloned dependency, made again: `repository` for
-  # the dependency, and `modules/<path>` for the submodule at <path> of
-  # its checkout.
+  # The repositories of a cloned dependency: `repository` is the library's
+  # checkout with its .git directory, and `modules/<path>` is a repository
+  # made for the submodule at <path>: its directory in the checkout written
+  # as the tree of the recorded commit, the commit object written and
+  # checked against the commit, and the repository marked shallow at it.
   repositories =
     resolved: entry:
     let
-      checkout = fetch resolved entry;
-      # `dest` is shell text, so that it can name $out.
-      make = dest: dir: repo: ''
-        make ${dest} ${checkout}/${lib.escapeShellArg dir} ${repo.rev} ${lib.escapeShellArg repo.commitObject.object} ${
-          lib.escapeShellArgs (map (l: "${l.path}=${l.rev}") repo.commitObject.gitlinks)
+      checkout = fetchEntry (entryOf entry);
+      make = s: ''
+        make "$out/modules/"${lib.escapeShellArg s.path} ${checkout}/${lib.escapeShellArg s.path} ${s.rev} ${lib.escapeShellArg s.commitObject.object} ${
+          lib.escapeShellArgs (map (l: "${l.path}=${l.rev}") s.commitObject.gitlinks)
         }
       '';
     in
     runCommand "npm-purifier-git-repositories" { nativeBuildInputs = [ gitMinimal ]; } ''
       export HOME="$TMPDIR"
       git config --global safe.directory '*'
-      # make <repository> <checkout> <commit> <commit object, base64>
+      # make <repository> <directory> <commit> <commit object, base64>
       #   [<submodule path>=<submodule commit>]...
       make() {
         local dest="$1" work="$2" rev="$3" object="$4"
@@ -130,7 +134,7 @@ let
         rm -f "$GIT_INDEX_FILE"
         git --work-tree="$work" add -A -f .
         for link in "$@"; do
-          git rm -r -q --cached "''${link%%=*}"
+          git rm -r -q --cached --ignore-unmatch "''${link%%=*}"
           git update-index --add --cacheinfo "160000,''${link#*=},''${link%%=*}"
         done
         tree="$(git write-tree)"
@@ -150,10 +154,8 @@ let
         unset GIT_DIR GIT_INDEX_FILE
       }
       mkdir -p "$out/modules"
-      ${make ''"$out/repository"'' "." entry.git}
-      ${lib.concatMapStrings (s: make ''"$out/modules/"${lib.escapeShellArg s.path}'' s.path s) (
-        entry.submodules or [ ]
-      )}
+      ln -s ${checkout} "$out/repository"
+      ${lib.concatMapStrings make (entry.submodules or [ ])}
     '';
 
   # The settings that point git at the repositories: each repository URL

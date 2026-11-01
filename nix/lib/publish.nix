@@ -6,6 +6,7 @@
 # that holds them all, with the project's directory inside it as
 # `projectDir`.
 {
+  # A package set with the flake's overlay, which adds buildNpmProject.
   pkgs,
   lockFile,
 }:
@@ -28,7 +29,7 @@ let
   up = n: path: if n == 0 then path else up (n - 1) (dirOf path);
   rootParts = lib.filter (p: p != "") (lib.splitString "/" (toString projectRoot));
 in
-(pkgs.callPackage ./build-npm-project.nix { }) {
+pkgs.buildNpmProject {
   src = up depth projectRoot;
   projectDir = lib.concatStringsSep "/" (lib.drop (lib.length rootParts - depth) rootParts);
   inherit lockFile;

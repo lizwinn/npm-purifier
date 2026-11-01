@@ -23,10 +23,12 @@ expect() {
   local out
   if out="$(nix eval --impure --expr "
     let
-      pkgs = import (builtins.getFlake \"nixpkgs\") { };
+      # The library of this flake, which holds the purifier library.
+      lib = (builtins.getFlake \"git+file://$root\").lib;
       lock = import $root/nix/lib/lock.nix {
-        inherit (pkgs) lib;
-        platform = pkgs.stdenv.hostPlatform;
+        inherit lib;
+        inherit (lib) purifier;
+        system = builtins.currentSystem;
         lockFile = $dir/package-lock.json;
       };
     in builtins.deepSeq [ lock.downloads lock.git lock.packages ] true

@@ -32,11 +32,14 @@
   lib,
   stdenv,
   callPackage,
+  runCommand,
   writeShellScript,
   runtimeShell,
   nodejs,
   python3,
   git,
+  # The shared purifier library, which the flake's overlay passes.
+  purifier,
 }:
 {
   # The source tree. It holds the project and every local directory the
@@ -87,6 +90,7 @@ let
       purifierLockFile
       fetchurl
       gitCheckouts
+      purifier
       ;
   };
   inherit (cache) lock;
@@ -336,4 +340,23 @@ in
   inherit build productionModules;
   cache = cache.tree;
   packages = lib.mapAttrs (_: mkPackage) lock.packages;
+  # What the `npm` wrapper builds for the project: the content of npm's
+  # cache in `cache/`, and the shell commands that set up the environment
+  # npm runs in, in `environment`. The Node.js of nixpkgs prepares git
+  # dependencies with the patchShebangs of stdenv, which it loads from
+  # $stdenv/setup.
+  interactive =
+    runCommand "npm-purifier-interactive"
+      {
+        passAsFile = [ "environment" ];
+        environment = ''
+          export stdenv=${stdenv}
+          ${cache.environment}
+        '';
+      }
+      ''
+        mkdir -p "$out"
+        ln -s ${cache.tree} "$out/cache"
+        cp "$environmentPath" "$out/environment"
+      '';
 }

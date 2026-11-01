@@ -15,6 +15,8 @@ in
     final: prev:
     packages final prev
     // {
-      buildNpmProject = final.callPackage ../../nix/lib/build-npm-project.nix { };
+      buildNpmProject = final.callPackage ../../nix/lib/build-npm-project.nix {
+        inherit (closure-lib) purifier;
+      };
     };
 }
