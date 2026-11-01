@@ -94,7 +94,7 @@ Nix and runs `npm publish` on that tarball. Further arguments go to
 `npm publish`, so `npm-purifier publish --dry-run` shows what would be
 uploaded. Nothing is packed outside the sandbox.
 
-On the projects below, `npm-purifier lock` with nothing to change took
+On the examples below, `npm-purifier lock` with nothing to change took
 under a second, and an offline `npm ci` took 3 seconds for commander and 18
 seconds for http-server.
 
@@ -207,10 +207,11 @@ or integrity of entries, the lock run records them in the `completions`
 of that external file, keyed by their place in `package-lock.json`. The
 build installs from a copy of `package-lock.json` completed with them.
 
-## Real-world projects
+## Examples
 
-Two projects build in the flake's checks from pinned sources, and both
-were also run through the wrapper offline:
+The flake's checks lock and build real projects from pinned sources, as
+examples of npm-purifier at work. These two show its builder and its
+offline loop:
 
 - [tj/commander.js](https://github.com/tj/commander.js): the build runs the
   type checks, and all 1372 tests of its suite pass. Upgrading prettier

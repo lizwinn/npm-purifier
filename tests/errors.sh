@@ -116,4 +116,8 @@ expect conflict 'package-lock.json has merge conflict markers; run `npm install`
 lockfile malformed <<< 'not json'
 expect malformed 'package-lock.json is not a JSON lockfile; run `npm install`'
 
+# A lockfile that starts as JSON and does not parse.
+lockfile truncated <<< '{"lockfileVersion": 3, "packages": {'
+expect truncated 'package-lock.json, which is not valid JSON; run `npm install`'
+
 exit "$status"

@@ -96,7 +96,13 @@ let
     else if !(lib.hasPrefix "{" (lib.trim (builtins.substring 0 4096 text))) then
       problemOf "${toString file} is not a JSON lockfile; ${fix}."
     else
-      { value = builtins.fromJSON text; };
+      # Nix cannot catch a parse error of the rest of the file, so it
+      # fails evaluation with this context.
+      {
+        value = builtins.addErrorContext "while reading ${toString file}, which is not valid JSON; ${fix}" (
+          builtins.fromJSON text
+        );
+      };
 
   # The `packages` of a package-lock.json.
   packagesOf =

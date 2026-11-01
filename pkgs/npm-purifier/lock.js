@@ -355,7 +355,16 @@ const main = (root, purifierLockPath) => {
   const packageLockText = fs.readFileSync(packageLockPath);
   // A git dependency names its commit, so an entry made for the same
   // `resolved` still holds; the run reuses it rather than fetching again.
-  const previous = fs.existsSync(purifierLockPath) ? readJson(purifierLockPath).git || {} : {};
+  // A file that is not valid JSON holds nothing to reuse; the run writes
+  // it again.
+  const readPrevious = () => {
+    try {
+      return readJson(purifierLockPath).git || {};
+    } catch {
+      return {};
+    }
+  };
+  const previous = fs.existsSync(purifierLockPath) ? readPrevious() : {};
   const queue = gitDependencies(JSON.parse(packageLockText));
   const git = {};
   while (queue.length > 0) {

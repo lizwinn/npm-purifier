@@ -106,6 +106,19 @@ writeShellApplication {
     export NPM_PURIFIER_PACKAGE_LOCK="$root/package-lock.json"
     export NPM_PURIFIER_LOCKFILE="$lockfile"
 
+    # Nix cannot catch a JSON parse error, so the commands that evaluate
+    # the build check the lockfiles first.
+    checkJson() {
+      if [ -f "$1" ] && ! node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$1" 2> /dev/null; then
+        echo "npm-purifier: $1 is not valid JSON; $2" >&2
+        exit 1
+      fi
+    }
+    checkLockfiles() {
+      checkJson "$root/package-lock.json" "run \`npm install\` to write it again"
+      checkJson "$lockfile" "run \`npm-purifier lock\` to write it again"
+    }
+
     case "$command" in
       lock)
         NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
@@ -123,6 +136,7 @@ writeShellApplication {
           echo "npm-purifier: $root has no package-lock.json; run \`npm-purifier lock\`" >&2
           exit 1
         fi
+        checkLockfiles
         echo "npm-purifier: building the dependencies of $root" >&2
         mkdir -p "$state"
         nix build --impure --out-link "$state/dependencies" --expr "$project.interactive"
@@ -142,6 +156,7 @@ writeShellApplication {
         echo "npm-purifier: npm runs offline in $root through the npm-purifier npm wrapper" >&2
         ;;
       publish)
+        checkLockfiles
         name="$(node -p 'require("./package.json").name')"
         echo "npm-purifier: building $name" >&2
         tarball="$(
