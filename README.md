@@ -27,9 +27,41 @@ one. The builder and the commands look for them there by default. Add
 `.npm-purifier/` to `.gitignore`: it holds the project's prefetched
 dependencies.
 
-To build the project with Nix, apply the overlay of the flake to a package
-set. The overlay adds one attribute, the scope `npm-purifier`, which holds
-the builder `buildNpmProject` beside the commands:
+To build the project with Nix, run this in the project's directory. It adds
+no Nix file to the project. The overlay of the flake adds one attribute to
+the package set, the scope `npm-purifier`, which holds the builder
+`buildNpmProject` beside the commands:
+
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.npm-purifier.buildNpmProject { src = ./.; }).packages.my-app'
+```
+
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
+
+The root package, each workspace and each local directory the project
+depends on become `packages.<name>`, installed with their production
+dependencies and with their commands in `bin/`. `release` holds the
+tarballs `npm publish` uploads, and `tests` runs the `test` script in a
+derivation of its own. `fetches` lists every download as an entry of the
+purifier library, for SBOM, license and vulnerability tools.
+`nix/lib/build-npm-project.nix` documents every argument of the builder.
+
+A project whose authors want a flake can package it with one that calls the
+builder directly. The flake can live in the repository of the project or in
+another one:
 
 ```nix
 {
@@ -55,15 +87,8 @@ the builder `buildNpmProject` beside the commands:
 }
 ```
 
-The root package, each workspace and each local directory the project
-depends on become `packages.<name>`, installed with their production
-dependencies and with their commands in `bin/`. `release` holds the
-tarballs `npm publish` uploads, and `tests` runs the `test` script in a
-derivation of its own. `fetches` lists every download as an entry of the
-purifier library, for SBOM, license and vulnerability tools.
-`nix/lib/build-npm-project.nix` documents every argument of the builder.
-
-A package written for `callPackage` takes the scope by name:
+A package in a package set that has the overlay applied takes the scope by
+name:
 
 ```nix
 { npm-purifier }: (npm-purifier.buildNpmProject { src = ./.; }).packages.my-app
@@ -257,78 +282,61 @@ npm test
 ```
 
 commander.js has no git dependencies, so the lock run writes no
-`npm-purifier.lock.json`. A `flake.nix` in the checkout builds the package
-and runs the tests in the sandbox:
+`npm-purifier.lock.json`. From the same directory, this builds the package
+and runs its tests in the sandbox, with no Nix file added to the checkout:
 
-```nix
-{
-  inputs.npm-purifier.url = "github:nix-purifiers/npm-purifier";
-  inputs.nixpkgs.follows = "npm-purifier/nixpkgs";
-
-  outputs = { nixpkgs, npm-purifier, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ npm-purifier.overlays.default ];
-      };
-      project = pkgs.npm-purifier.buildNpmProject { src = ./.; };
-    in
-    {
-      packages.${system}.default = project.packages.commander;
-      checks.${system}.tests = project.tests;
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
     };
-}
+    project = pkgs.npm-purifier.buildNpmProject {
+      src = ./.;
+      doCheck = true;
+    };
+  in
+  project.packages.commander'
 ```
 
-### Packaging http-server without changing it
+### Building http-server without changing it
 
 [http-server](https://github.com/http-party/http-server) is a static file
-server. A flake of your own can package it while its repository stays as
-it is. The flake takes the source as an input and keeps
-`npm-purifier.lock.json` beside its own `flake.nix`:
-
-```nix
-{
-  inputs.npm-purifier.url = "github:nix-purifiers/npm-purifier";
-  inputs.nixpkgs.follows = "npm-purifier/nixpkgs";
-  inputs.http-server = {
-    url = "github:http-party/http-server";
-    flake = false;
-  };
-
-  outputs = { nixpkgs, npm-purifier, http-server, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ npm-purifier.overlays.default ];
-      };
-      project = pkgs.npm-purifier.buildNpmProject {
-        src = http-server;
-        lockFile = ./npm-purifier.lock.json;
-      };
-    in
-    {
-      packages.${system}.default = project.packages.http-server;
-    };
-}
-```
-
-Write the lockfile from a checkout of the commit that `flake.lock` pins,
-with the flake's directory beside it:
+server. Its `package-lock.json` leaves out the URL and integrity of many
+entries, so this example keeps the lockfile of npm-purifier outside the
+checkout, and the checkout stays as the authors published it:
 
 ```zsh
 git clone https://github.com/http-party/http-server
 cd http-server
-git checkout <the commit flake.lock pins for http-server>
-npm-purifier lock --lockfile ../http-server-flake/npm-purifier.lock.json
+nix develop github:nix-purifiers/npm-purifier
+npm-purifier lock --lockfile ../http-server.lock.json
 ```
 
-The lock run leaves the checkout as it is. The `package-lock.json` of
-http-server leaves out the URL and integrity of many entries, and the lock
-run records them in `npm-purifier.lock.json` beside `flake.nix`. Then
-`nix build` in that directory builds the server.
+The lock run leaves the checkout as it is and records the missing URLs and
+integrities in `../http-server.lock.json`. From the checkout, this builds
+the server with that lockfile:
+
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.npm-purifier.buildNpmProject {
+    src = ./.;
+    lockFile = ../http-server.lock.json;
+  }).packages.http-server'
+```
+
+A flake of your own can do the same with http-server as an input that has
+`flake = false`, passing the path of its own `npm-purifier.lock.json` as
+`lockFile`.
 
 ## Credits
 
