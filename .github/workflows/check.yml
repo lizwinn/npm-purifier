@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: MIT
 #
-# Runs every check: the flake's checks (the fixture builds in the Nix
-# sandbox, the lockfile reader, the publish step and the formatting), their
-# evaluation for every system, the lock run against the network, and the
-# `npm` wrapper offline.
+# Runs every check on x86_64-linux and aarch64-linux: the flake's checks
+# (the fixture builds in the Nix sandbox, the unit tests of the lock run,
+# the refused lockfiles, the publish step and the formatting), their
+# evaluation for every system, the messages of common mistakes, the lock
+# run against the network, and the `npm` wrapper offline.
 name: check
 
 on:
@@ -16,7 +17,11 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -25,6 +30,8 @@ jobs:
         run: nix flake check -L
       - name: Evaluation for every system
         run: nix flake check --all-systems --no-build
+      - name: Messages of common mistakes
+        run: tests/errors.sh
       - name: Lock run
         run: tests/lock-run.sh
       - name: Offline npm wrapper

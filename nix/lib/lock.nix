@@ -35,7 +35,23 @@
   platform,
 }:
 let
-  lock = lib.importJSON lockFile;
+  # Reads a lockfile. Nix cannot catch a JSON parse error, and its message
+  # does not name the file, so the reader refuses a file that cannot be
+  # JSON first: one with merge conflict markers, which `npm install`
+  # resolves in package-lock.json, or one that does not start an object.
+  readLockFile =
+    file: fix:
+    let
+      text = builtins.readFile file;
+    in
+    if lib.hasInfix "\n<<<<<<< " ("\n" + text) then
+      throw "npm-purifier: ${toString file} has merge conflict markers; ${fix}."
+    else if !(lib.hasPrefix "{" (lib.trim text)) then
+      throw "npm-purifier: ${toString file} is not a JSON lockfile; ${fix}."
+    else
+      builtins.fromJSON text;
+
+  lock = readLockFile lockFile "run `npm install` to write it again";
 
   packagesOf =
     name: l:
@@ -151,7 +167,7 @@ let
 
   purifierLockName = toString purifierLockFile;
   hasPurifierLock = builtins.pathExists purifierLockFile;
-  purifierLock = lib.importJSON purifierLockFile;
+  purifierLock = readLockFile purifierLockFile "run `npm nix-lock` to write it again";
   needsPurifierLock = gitOf packages != [ ];
 
   git =

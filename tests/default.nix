@@ -262,4 +262,126 @@ in
 
   # The wrapper itself builds.
   npm = withOverlay.npm-purifier.npm;
+
+  # The unit tests of the lock run (pkgs/npm/nix-lock.test.js).
+  lock-run-units =
+    pkgs.runCommand "lock-run-units"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+        NPM_PURIFIER_NPM_MODULES = "${pkgs.nodejs}/lib/node_modules/npm/node_modules";
+      }
+      ''
+        cp ${../pkgs/npm/nix-lock.js} nix-lock.js
+        cp ${../pkgs/npm/nix-lock.test.js} nix-lock.test.js
+        node --test nix-lock.test.js
+        touch $out
+      '';
+
+  # An integrity gives the path npm itself puts the tarball at in its
+  # cache; the expected path is one npm wrote.
+  cache-path =
+    let
+      lock = {
+        lockfileVersion = 3;
+        packages = {
+          "" = {
+            name = "p";
+          };
+          "node_modules/is-number" = {
+            resolved = "https://example.invalid/is-number.tgz";
+            integrity = "sha512-U/Io4+4Bh+/skMvNZc7P9eVAscpCVoCmobHne66HjJKpKfMU5MPmaOl3W83zZq1If3kp03Z+liHyXJG+svOLIg==";
+          };
+        };
+      };
+    in
+    evalCheck "cache-path" (
+      map (d: d.path) (readLock host lock).downloads == [
+        "content-v2/sha512/53/f2/28e3ee0187efec90cbcd65cecff5e540b1ca425680a6a1b1e77bae878c92a929f314e4c3e668e9775bcdf366ad487f7929d3767e9621f25c91beb2f38b22"
+      ]
+    ) "the cache path of an integrity is not the one npm uses";
+
+  # Lockfiles the reader refuses, each with a message that names the
+  # problem: a git dependency the purifier lockfile lacks, a lockfile older
+  # than npm 7, a source that is neither a tarball URL, a repository nor a
+  # path, and a tarball without an integrity.
+  missing-entry =
+    let
+      purifierLock = builtins.toFile "npm-purifier.lock.json" (
+        builtins.toJSON {
+          version = 1;
+          packageLockSha256 = builtins.hashString "sha256" (builtins.toJSON gitLock);
+          git = { };
+        }
+      );
+    in
+    evalCheck "missing-entry" (fails
+      (import ../nix/lib/lock.nix {
+        inherit lib;
+        platform = host;
+        lockFile = builtins.toFile "package-lock.json" (builtins.toJSON gitLock);
+        purifierLockFile = purifierLock;
+      }).git
+    ) "a git dependency without an entry in npm-purifier.lock.json evaluated";
+  old-lockfile = evalCheck "old-lockfile" (fails
+    (readLock host {
+      lockfileVersion = 1;
+      dependencies = { };
+    }).downloads
+  ) "a lockfileVersion 1 lockfile evaluated";
+  unknown-source = evalCheck "unknown-source" (fails
+    (readLock host {
+      lockfileVersion = 3;
+      packages."node_modules/a".resolved = "ftp://example.invalid/a.tgz";
+    }).downloads
+  ) "a dependency from ftp evaluated";
+  missing-integrity = evalCheck "missing-integrity" (fails
+    (readLock host {
+      lockfileVersion = 3;
+      packages."node_modules/a".resolved = "https://registry.npmjs.org/a/-/a-1.0.0.tgz";
+    }).downloads
+  ) "a tarball without an integrity evaluated";
+
+  # A tarball whose bytes do not match its integrity fails the install:
+  # here the fetcher hands npm another file.
+  tampered-tarball =
+    let
+      tampered = buildNpmProject {
+        src = ./fixtures/app;
+        fetchurl = { name, ... }: pkgs.writeText name "not the tarball";
+      };
+    in
+    pkgs.runCommand "tampered-tarball-check" { } ''
+      grep -q 'seems to be corrupted' ${pkgs.testers.testBuildFailure tampered.build}/testBuildFailure.log
+      touch $out
+    '';
+
+  # A commit object that is not the locked commit fails the build of the
+  # repository, with a message that names the commit.
+  tampered-commit =
+    let
+      entries =
+        (import ../nix/lib/lock.nix {
+          inherit lib;
+          platform = host;
+          lockFile = ./fixtures/git/package-lock.json;
+        }).git;
+      clone = entries.${cloneResolved};
+      tampered = clone // {
+        git = clone.git // {
+          rev = "0000000000000000000000000000000000000000";
+        };
+      };
+      made =
+        (pkgs.callPackage ../nix/lib/git.nix {
+          git = {
+            ${cloneResolved} = tampered;
+          };
+          checkouts.${cloneResolved} = repositories.checkout;
+        }).repositories.${cloneResolved};
+    in
+    pkgs.runCommand "tampered-commit-check" { } ''
+      grep -q 'is not commit 0000000000000000000000000000000000000000' \
+        ${pkgs.testers.testBuildFailure made}/testBuildFailure.log
+      touch $out
+    '';
 }

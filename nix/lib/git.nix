@@ -219,6 +219,8 @@ let
 in
 {
   inherit cache gitConfig prefetchNpmDeps;
+  # The repositories made for each cloned dependency, by `resolved`.
+  repositories = lib.mapAttrs repositories clones;
   # Whether the install clones repositories with git.
   needsGit = clones != { };
   # The shell commands that set up the environment npm runs in.

@@ -38,13 +38,13 @@ const modules = process.env.NPM_PURIFIER_NPM_MODULES;
 const npa = require(path.join(modules, "npm-package-arg"));
 const npm = process.env.NPM_PURIFIER_NPM;
 
-const root = path.resolve(process.argv[2] || ".");
-const packageLockPath = path.join(root, "package-lock.json");
-const purifierLockPath = path.join(root, "npm-purifier.lock.json");
-
 // The scripts that make npm prepare a git dependency before packing it
 // (pacote's GitFetcher).
 const prepareScripts = ["postinstall", "build", "preinstall", "install", "prepack", "prepare"];
+
+// Whether npm prepares a git dependency with this package.json.
+const needsPreparation = (manifest) =>
+  Boolean(manifest.workspaces) || prepareScripts.some((s) => (manifest.scripts || {})[s]);
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 
@@ -157,9 +157,7 @@ const repositoryOf = (url, rev, gitlinks, urls, prefix) =>
 // The lockfile npm installs before preparing the dependency at `dir`, or
 // null when npm does not prepare it.
 const preparationLock = (dir) => {
-  const manifest = readJson(path.join(dir, "package.json"));
-  const scripts = manifest.scripts || {};
-  if (!manifest.workspaces && !prepareScripts.some((s) => scripts[s])) return null;
+  if (!needsPreparation(readJson(path.join(dir, "package.json")))) return null;
   for (const name of ["npm-shrinkwrap.json", "package-lock.json"]) {
     const file = path.join(dir, name);
     if (fs.existsSync(file)) return { lock: readJson(file), inject: false };
@@ -179,30 +177,48 @@ const preparationLock = (dir) => {
   }
 };
 
-const lockGit = (resolved) => {
+// Where npm gets the git dependency `resolved` from, as npm itself works
+// it out (npm-package-arg and hosted-git-info): { rev, subdir, url } with
+// `archive`, the archive URL npm downloads, for a repository on a known
+// host, and with `repository`, the URL npm clones, for any other.
+const sourceOf = (resolved) => {
   const spec = npa(resolved);
   const rev = spec.gitCommittish;
   if (!/^[0-9a-f]{40}$/.test(rev || "")) {
-    throw new Error(`${resolved} does not name a commit; run npm install to lock it`);
+    throw new Error(`${resolved} does not name a commit; run \`npm install\` to lock it`);
   }
   const subdir = spec.gitSubdir ? spec.gitSubdir.replace(/^\/+/, "") : "";
   const hosted = spec.hosted;
+  if (hosted && hosted.tarball) {
+    return {
+      rev,
+      subdir,
+      url: hosted.https({ noCommittish: true }).replace(/^git\+/, ""),
+      archive: hosted.tarball({ noCommittish: false }),
+    };
+  }
+  return { rev, subdir, url: spec.fetchSpec, repository: spec.fetchSpec };
+};
+
+const lockGit = (resolved) => {
+  const source = sourceOf(resolved);
+  const { rev, subdir } = source;
   const entry = {};
   let fetched;
-  if (hosted && hosted.tarball) {
+  if (source.archive) {
     // npm downloads the host's archive of the commit, which holds no
     // submodules.
-    const url = hosted.https({ noCommittish: true }).replace(/^git\+/, "");
+    const { url } = source;
     fetched = prefetch(url, rev, { submodules: false, leaveDotGit: false });
     entry.git = { url, rev, submodules: false, leaveDotGit: false, commitObject: null };
-    entry.archive = hosted.tarball({ noCommittish: false });
+    entry.archive = source.archive;
   } else {
     // npm clones the repository and its submodules with git. A checkout
     // that keeps its .git directory has no stable hash, because git packs
     // objects differently from run to run, so the run locks a plain
     // checkout, and the raw commit objects from which a build makes the
     // repositories again.
-    const url = spec.fetchSpec;
+    const { url } = source;
     const probe = prefetch(url, rev, { submodules: false, leaveDotGit: false });
     const submodules = fs.existsSync(path.join(probe.path, ".gitmodules"));
     fetched = submodules ? prefetch(url, rev, { submodules, leaveDotGit: false }) : probe;
@@ -225,7 +241,9 @@ const lockGit = (resolved) => {
   return entry;
 };
 
-const main = () => {
+const main = (root) => {
+  const packageLockPath = path.join(root, "package-lock.json");
+  const purifierLockPath = path.join(root, "npm-purifier.lock.json");
   const packageLockText = fs.readFileSync(packageLockPath);
   // A git dependency names its commit, so an entry made for the same
   // `resolved` still holds; the run reuses it rather than fetching again.
@@ -258,4 +276,9 @@ const main = () => {
   process.stderr.write(`npm-purifier: wrote ${purifierLockPath}\n`);
 };
 
-main();
+// The parts that need no network, for pkgs/npm/nix-lock.test.js.
+module.exports = { gitDependencies, sourceOf, resolveSubmoduleUrl, submodulesOf, needsPreparation };
+
+if (require.main === module) {
+  main(path.resolve(process.argv[2] || "."));
+}
