@@ -40,7 +40,9 @@
 // project's files as they are: it runs no `npm install`, and it records
 // the URL and integrity of incomplete entries in the `completions` of
 // npm-purifier.lock.json, by their key in package-lock.json, rather than
-// in package-lock.json.
+// in package-lock.json. A flake that keeps its own package-lock.json
+// outside the repository too names it with NPM_PURIFIER_TOOL_LOCKFILE; the
+// run then writes that file, as it writes the one in a project.
 //
 // Usage: node lock.js <project root> [<npm-purifier.lock.json>]
 // The environment names npm's own modules (NPM_PURIFIER_NPM_MODULES) and
@@ -326,7 +328,11 @@ const withHash = (text) => {
 
 const main = (root, purifierLockPath) => {
   const packageLockPath = path.join(root, "package-lock.json");
-  const external = path.dirname(purifierLockPath) !== path.resolve(root);
+  // With an outside package-lock.json (NPM_PURIFIER_TOOL_LOCKFILE), the
+  // command has put that file in the project for this run, and the run
+  // writes it like a package-lock.json of the project.
+  const external =
+    path.dirname(purifierLockPath) !== path.resolve(root) && !process.env.NPM_PURIFIER_TOOL_LOCKFILE;
   // npm brings package-lock.json in step with package.json, resolving
   // against the registry; an up-to-date lockfile stays as it is.
   if (!external) {

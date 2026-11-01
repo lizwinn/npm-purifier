@@ -21,9 +21,11 @@ npm-purifier lock
 npm ci
 ```
 
-Commit `package-lock.json`, and `npm-purifier.lock.json` when the lock
-run writes one. Add `.npm-purifier/` to `.gitignore`: it holds the
-project's prefetched dependencies.
+We recommend committing both lockfiles to the project's repository:
+`package-lock.json`, and `npm-purifier.lock.json` when the lock run writes
+one. The builder and the commands look for them there by default. Add
+`.npm-purifier/` to `.gitignore`: it holds the project's prefetched
+dependencies.
 
 To build the project with Nix, apply the flake's overlay to a package
 set. The overlay adds the builder `buildNpmProject`:
@@ -128,18 +130,18 @@ npm's `ENOTCACHED` error, and the wrapper adds a line that names
 `npm-purifier lock`. `NPM_PURIFIER=0` turns the wrapper off for one
 command. `NPM_PURIFIER_LOCKFILE` names an `npm-purifier.lock.json` other
 than the one at the project root, for the wrapper and for every
-`npm-purifier` command. A flake that keeps the file outside the project
-can set it in its development shell to the path it passes the builder as
-`lockFile`.
+`npm-purifier` command. `NPM_PURIFIER_TOOL_LOCKFILE` names a
+`package-lock.json` kept outside the project, for every `npm-purifier`
+command. A flake that keeps the files outside the project can set both
+variables in its development shell to the paths it passes the builder.
 
-An external build leaves `package-lock.json` as the project has it. When
-that file leaves out the URL or integrity of entries, the external
-`npm-purifier.lock.json` records them for the Nix build, and npm, which
-reads only `package-lock.json`, cannot install those entries offline. The
-wrapper then stops with `ENOTCACHED` and says so. The development loop of such
-a project needs the entries completed in `package-lock.json` itself,
-which `npm-purifier lock` does when `npm-purifier.lock.json` lies in the
-project.
+npm in the project reads the `package-lock.json` of the project. It reads
+neither an outside copy nor the `completions` of an outside
+`npm-purifier.lock.json`, which serve the Nix build. Where those differ
+from the file in the project, the wrapper stops with `ENOTCACHED` on the
+entries the prefetch did not keep, and says so. The development loop works
+offline with both lockfiles committed in the project, which is the
+recommended setup.
 
 ## Editor
 
@@ -213,16 +215,27 @@ submodule, which live in the repository itself. For a prepared dependency
 it adds the dependency's own lockfile. The commit and the directory in the
 repository come from `resolved`.
 
-A flake can package a project without changing it. An external build
-leaves `package-lock.json` untouched, and what it lacks goes into the
-external `npm-purifier.lock.json`. The project's
-`package-lock.json` stays in the tree, and the flake keeps
-`npm-purifier.lock.json` outside it and passes that path to the builder
-as `lockFile`. `npm-purifier lock --lockfile <path>` then leaves the
-project's files as they are. When `package-lock.json` leaves out the URL
-or integrity of entries, the lock run records them in the `completions`
-of that external file, keyed by their place in `package-lock.json`. The
-build installs from a copy of `package-lock.json` completed with them.
+A flake can also build a project as an external build, without changing
+the project's repository. The flake keeps `npm-purifier.lock.json` outside
+the project and passes its path to the builder as `lockFile`. It can keep
+its own copy of `package-lock.json` outside the project too, and pass it
+as `packageLock`; the build installs from that copy in place of the one
+in `src`. A project whose committed `package-lock.json` is missing, stale
+or incomplete builds this way from its source as published.
+
+`npm-purifier lock --lockfile <path> --tool-lockfile <path>` writes both
+outside files and leaves the files in the project as they are. When the
+outside `package-lock.json` does not exist yet, the lock run starts from
+the one in the project. `NPM_PURIFIER_TOOL_LOCKFILE` does the same as
+`--tool-lockfile`, and `npm-purifier update` takes both options too.
+
+A flake that keeps only `npm-purifier.lock.json` outside, and the
+`package-lock.json` of the project as it is, can still build a project
+whose `package-lock.json` leaves out the URL or integrity of entries. The
+lock run records them in the `completions` of the outside
+`npm-purifier.lock.json`, keyed by their place in `package-lock.json`, and
+the build installs from a copy of `package-lock.json` completed with
+them.
 
 ## Examples
 

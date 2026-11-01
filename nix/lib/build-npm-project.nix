@@ -68,6 +68,10 @@
   # and the file then also completes the entries of package-lock.json
   # that lack a URL or an integrity.
   lockFile ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/npm-purifier.lock.json",
+  # npm's lockfile; the default is the one in the project. A packaging
+  # flake can keep its own copy outside the repository, which the build
+  # installs from in place of the one in `src`.
+  packageLock ? src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json",
   # The Node.js that runs npm and the project's scripts, and that the
   # packages' commands run on. Git dependencies with a prepare script need
   # the Node.js of nixpkgs, whose npm prepares them inside the sandbox.
@@ -109,6 +113,7 @@ let
         src
         projectDir
         lockFile
+        packageLock
         ;
     }
   );
@@ -122,18 +127,28 @@ let
   );
   completedPackageLock =
     let
-      packageLock = lib.importJSON (
-        src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json"
-      );
+      read = lib.importJSON packageLock;
     in
     writeText "package-lock.json" (
       builtins.toJSON (
-        packageLock
+        read
         // {
-          packages = lib.mapAttrs (key: entry: entry // completions.${key} or { }) packageLock.packages;
+          packages = lib.mapAttrs (key: entry: entry // completions.${key} or { }) read.packages;
         }
       )
     );
+
+  # The package-lock.json npm installs from: the one in the project, a copy
+  # given as `packageLock`, or that one completed.
+  installLock =
+    if completions != { } then
+      completedPackageLock
+    else if
+      packageLock != src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package-lock.json"
+    then
+      packageLock
+    else
+      null;
 
   cache = callPackage ./cache.nix {
     inherit fetchers gitCheckouts lock;
@@ -196,8 +211,8 @@ let
     mkdir -p "$HOME" "$npm_config_cache/_cacache"
     cp -rs --no-preserve=mode ${cache.tree}/. "$npm_config_cache/_cacache"
     ${cache.environment}
-    ${lib.optionalString (completions != { }) ''
-      cp --no-preserve=mode ${completedPackageLock} package-lock.json
+    ${lib.optionalString (installLock != null) ''
+      cp --no-preserve=mode ${installLock} package-lock.json
     ''}
   '';
 

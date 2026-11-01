@@ -61,6 +61,10 @@ writeShellApplication {
     if [ -n "''${NPM_PURIFIER_LOCKFILE:-}" ]; then
       lockfile="$(realpath -m "$NPM_PURIFIER_LOCKFILE")"
     fi
+    toolLockfile=
+    if [ -n "''${NPM_PURIFIER_TOOL_LOCKFILE:-}" ]; then
+      toolLockfile="$(realpath -m "$NPM_PURIFIER_TOOL_LOCKFILE")"
+    fi
     rest=()
     while [ "$#" -gt 0 ]; do
       case "$1" in
@@ -71,6 +75,15 @@ writeShellApplication {
           ;;
         --lockfile=*)
           lockfile="$(realpath -m "''${1#--lockfile=}")"
+          shift
+          ;;
+        --tool-lockfile)
+          [ "$#" -ge 2 ] || usage
+          toolLockfile="$(realpath -m "$2")"
+          shift 2
+          ;;
+        --tool-lockfile=*)
+          toolLockfile="$(realpath -m "''${1#--tool-lockfile=}")"
           shift
           ;;
         *)
@@ -105,9 +118,49 @@ writeShellApplication {
         };
         packageLock = /. + builtins.getEnv \"NPM_PURIFIER_PACKAGE_LOCK\";
         lockFile = /. + builtins.getEnv \"NPM_PURIFIER_LOCKFILE\";
+        toolLockFile =
+          let
+            path = builtins.getEnv \"NPM_PURIFIER_TOOL_LOCKFILE\";
+          in
+          if path == \"\" then null else /. + path;
       })"
     export NPM_PURIFIER_PACKAGE_LOCK="$root/package-lock.json"
     export NPM_PURIFIER_LOCKFILE="$lockfile"
+    export NPM_PURIFIER_TOOL_LOCKFILE="$toolLockfile"
+
+    # withToolLockfile <command>...: runs the command with the outside
+    # package-lock.json put where the package-lock.json of the project
+    # lies. When the outside file does not exist yet, the command starts
+    # from the file in the project. The file the command leaves goes to the
+    # outside path, and the file in the project is restored afterwards.
+    # Without an outside package-lock.json, the command runs as it is.
+    withToolLockfile() {
+      if [ -z "$toolLockfile" ]; then
+        "$@"
+        return
+      fi
+      local tree="$root/package-lock.json" saved status=0
+      saved="$(mktemp)"
+      if [ -f "$tree" ]; then
+        cp "$tree" "$saved"
+      else
+        rm -f "$saved"
+      fi
+      if [ -f "$toolLockfile" ]; then
+        cp "$toolLockfile" "$tree"
+      fi
+      "$@" || status=$?
+      if [ -f "$tree" ]; then
+        mkdir -p "$(dirname "$toolLockfile")"
+        cp "$tree" "$toolLockfile"
+      fi
+      if [ -f "$saved" ]; then
+        mv "$saved" "$tree"
+      else
+        rm -f "$tree"
+      fi
+      return "$status"
+    }
 
     # Nix cannot catch a JSON parse error, so the commands that evaluate
     # the build check the lockfiles first.
@@ -119,20 +172,25 @@ writeShellApplication {
     }
     checkLockfiles() {
       checkJson "$root/package-lock.json" "run \`npm install\` to write it again"
+      checkJson "$toolLockfile" "run \`npm-purifier lock\` to write it again"
       checkJson "$lockfile" "run \`npm-purifier lock\` to write it again"
     }
 
     case "$command" in
       lock)
-        NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
+        withToolLockfile env \
+          NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
           NPM_PURIFIER_NPM="$npm" \
           node ${./lock.js} "$root" "$lockfile"
         ;;
       update)
-        (cd "$root" && "$npm" update --package-lock-only --ignore-scripts --no-audit --no-fund "''${rest[@]}")
-        NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
-          NPM_PURIFIER_NPM="$npm" \
-          node ${./lock.js} "$root" "$lockfile"
+        updateAndLock() {
+          (cd "$root" && "$npm" update --package-lock-only --ignore-scripts --no-audit --no-fund "''${rest[@]}")
+          NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
+            NPM_PURIFIER_NPM="$npm" \
+            node ${./lock.js} "$root" "$lockfile"
+        }
+        withToolLockfile updateAndLock
         ;;
       prefetch)
         if [ ! -f "$root/package-lock.json" ]; then

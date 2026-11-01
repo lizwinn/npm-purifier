@@ -35,12 +35,17 @@
 # archive carries that lockfile inside already.
 {
   lib,
-  pkgs,
   runCommand,
   writeText,
   writeShellScript,
   gitMinimal,
   openssl,
+  # What fetchEntry of the purifier library fetches and builds with.
+  fetchurl,
+  fetchgit,
+  unzip,
+  zstd,
+  python3,
   # The shared purifier library.
   purifier,
   # Fetchers that replace those of the purifier library.
@@ -61,12 +66,18 @@ let
 
   fetchEntry = purifier.fetchEntry (
     {
-      inherit pkgs;
+      inherit
+        fetchurl
+        runCommand
+        unzip
+        zstd
+        python3
+        writeText
+        ;
     }
     // fetchers
     // {
-      fetchgit =
-        args: replacements."${args.url}#${args.rev}" or ((fetchers.fetchgit or pkgs.fetchgit) args);
+      fetchgit = args: replacements."${args.url}#${args.rev}" or ((fetchers.fetchgit or fetchgit) args);
     }
   );
 

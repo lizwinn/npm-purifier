@@ -14,9 +14,12 @@
   pkgs,
   packageLock,
   lockFile ? dirOf packageLock + "/npm-purifier.lock.json",
+  # A package-lock.json kept outside the project, which the build installs
+  # from in place of `packageLock`, or null.
+  toolLockFile ? null,
 }:
 let
-  lock = lib.importJSON packageLock;
+  lock = lib.importJSON (if toolLockFile != null then toolLockFile else packageLock);
 
   # How many directories above the project the farthest local package
   # lies.
@@ -32,8 +35,11 @@ let
   up = n: path: if n == 0 then path else up (n - 1) (dirOf path);
   rootParts = lib.filter (p: p != "") (lib.splitString "/" (toString projectRoot));
 in
-pkgs.buildNpmProject {
-  inherit lockFile;
-  src = up depth projectRoot;
-  projectDir = lib.concatStringsSep "/" (lib.drop (lib.length rootParts - depth) rootParts);
-}
+pkgs.buildNpmProject (
+  {
+    inherit lockFile;
+    src = up depth projectRoot;
+    projectDir = lib.concatStringsSep "/" (lib.drop (lib.length rootParts - depth) rootParts);
+  }
+  // lib.optionalAttrs (toolLockFile != null) { packageLock = toolLockFile; }
+)

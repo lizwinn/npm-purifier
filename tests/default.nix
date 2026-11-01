@@ -272,27 +272,38 @@ in
     ) "the lock in memory of the git fixture is not its four git dependencies and one output";
 
   # A project whose source holds no npm-purifier.lock.json builds from one
-  # kept outside it.
+  # kept outside it. It also builds when the flake replaces its
+  # package-lock.json with one outside the source.
   conformance-external =
     let
-      external = buildNpmProject {
-        src = builtins.path {
+      without =
+        names:
+        builtins.path {
           path = ./fixtures/git;
-          name = "git-fixture-without-purifier-lock";
-          filter = path: _: baseNameOf path != "npm-purifier.lock.json";
+          name = "git-fixture-without-lockfiles";
+          filter = path: _: !(lib.elem (baseNameOf path) names);
         };
+      external = buildNpmProject {
+        src = without [ "npm-purifier.lock.json" ];
         lockFile = ./fixtures/git/npm-purifier.lock.json;
         gitCheckouts.${cloneResolved} = repositories.checkout;
       };
+      replaced = buildNpmProject {
+        src = without [
+          "npm-purifier.lock.json"
+          "package-lock.json"
+        ];
+        lockFile = ./fixtures/git/npm-purifier.lock.json;
+        packageLock = ./fixtures/git/package-lock.json;
+        gitCheckouts.${cloneResolved} = repositories.checkout;
+      };
     in
-    pkgs.runCommand "conformance-external-check"
-      {
-        nativeBuildInputs = [ external.packages.git-fixture ];
-      }
-      ''
-        git-fixture | grep -qx 'clone: cloned, prepared (is-number says true), and from the submodule'
-        touch $out
-      '';
+    pkgs.runCommand "conformance-external-check" { } ''
+      for fixture in ${external.packages.git-fixture} ${replaced.packages.git-fixture}; do
+        "$fixture/bin/git-fixture" | grep -qx 'clone: cloned, prepared (is-number says true), and from the submodule'
+      done
+      touch $out
+    '';
 
   # The tarball Nix builds is one `npm publish` takes.
   publish =

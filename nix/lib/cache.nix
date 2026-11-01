@@ -12,10 +12,13 @@
 #   needsGit      whether the install clones repositories with git
 {
   lib,
-  pkgs,
   callPackage,
   symlinkJoin,
   stdenv,
+  # What `tree` of the purifier library fetches the tarballs with and lays
+  # them out with.
+  runCommand,
+  fetchurl,
   # The shared purifier library.
   purifier,
   # The lock in memory of the project (read-lock.nix).
@@ -31,7 +34,7 @@ let
 
   tarballs = purifier.tree (
     {
-      inherit pkgs;
+      inherit runCommand fetchurl;
       name = "npm-purifier-tarballs";
       entries = builtins.filter (entry: !(entry ? git)) entries;
     }
