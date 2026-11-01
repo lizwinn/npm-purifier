@@ -42,14 +42,17 @@ let
   # does not name the file, so the reader refuses a file that cannot be
   # JSON first: one with merge conflict markers, which `npm install`
   # resolves in package-lock.json, or one that does not start an object.
+  # The checks use no regular expression that spans the whole text: Nix
+  # matches `.*` recursively, character by character, and a match over a
+  # lockfile of a few hundred kilobytes overflows the evaluator's stack.
   readLockFile =
     file: fix:
     let
       text = builtins.readFile file;
     in
-    if lib.hasInfix "\n<<<<<<< " ("\n" + text) then
+    if builtins.length (builtins.split "\n<<<<<<< " ("\n" + text)) > 1 then
       throw "npm-purifier: ${toString file} has merge conflict markers; ${fix}."
-    else if !(lib.hasPrefix "{" (lib.trim text)) then
+    else if !(lib.hasPrefix "{" (lib.trim (builtins.substring 0 4096 text))) then
       throw "npm-purifier: ${toString file} is not a JSON lockfile; ${fix}."
     else
       builtins.fromJSON text;
