@@ -45,9 +45,13 @@ install, in one of two ways:
   packs the archive, and writes the cache index entry that answers the
   archive's URL with it.
 - From any other repository, npm clones it with git, checks out the
-  commit and updates its submodules. Nix fetches the repository with its
-  `.git` directory and its submodules, and git settings in the build map
-  the repository's URL and each submodule's URL to it.
+  commit and updates its submodules. Nix fetches a plain checkout with its
+  submodules, whose hash is stable, and the build makes each repository
+  from that checkout and the raw commit object the lock run recorded. It
+  writes the checkout as the commit's tree, writes the commit, checks that
+  the commit's ID is the locked one, and marks the repository shallow at
+  that commit. Git settings in the build map the repository's URL and each
+  submodule's URL to the repositories made this way.
 
 npm prepares a git dependency that has a prepare, build or install
 script: it installs the dependency's own dependencies, dev dependencies
@@ -66,7 +70,8 @@ npm nix-lock
 writes `npm-purifier.lock.json` for the git dependencies of
 `package-lock.json`. For each one it records the commit as a Nix hash of
 its checkout, the archive URL or the repository and submodule URLs npm
-uses, and the lockfile npm installs to prepare it. It reuses the entries
+uses, the raw commit objects of a repository npm clones and of its
+submodules, and the lockfile npm installs to prepare it. It reuses the entries
 it has, since an entry names a commit, and removes the file when the
 project has no git dependencies. The wrapper runs it after every command
 that changes `package-lock.json` (`install`, `update`, `uninstall` and
@@ -189,10 +194,10 @@ as they do for `npm publish`. Nothing is packed outside the sandbox.
 - A git dependency from a private repository cannot be fetched in the
   sandbox, which has no credentials. Supply its checkout with
   `gitCheckouts`.
-- A repository that npm clones is fetched with its `.git` directory. Its
-  Nix hash can change with the version of git that fetches it, which
-  shows as a hash mismatch; `npm nix-lock` after removing its entry
-  records the new hash.
+- A repository that npm clones is made again from its checkout, so the
+  checkout has to give the commit's tree back. A repository whose
+  `.gitattributes` changes file contents on checkout in a way `git add`
+  does not reverse fails the build with a message that names the commit.
 - The flake builds for x86_64-linux and aarch64-linux.
 
 ## Related work

@@ -10,8 +10,9 @@
 //   - the commit, as a Nix hash of its checkout;
 //   - for a repository on a known host, the archive URL npm downloads
 //     instead of cloning;
-//   - for any other repository, the URL npm clones and the URLs of its
-//     submodules, which a build maps to the checkout;
+//   - for any other repository, the URL npm clones, the raw commit object,
+//     and the URL, commit and commit object of each submodule, from which
+//     a build makes the repositories again;
 //   - for a dependency that npm prepares (one with a prepare, build or
 //     install script, or with workspaces), the lockfile of its own
 //     dependencies, which npm installs before running the script. The run
@@ -112,6 +113,45 @@ const submodulesOf = (checkout, url, prefix = "") => {
   });
 };
 
+// The raw commit object of `rev` in the repository at `url`, base64, and
+// the submodule entries of its tree (gitlinks), as { path, rev }.
+const commitOf = (url, rev) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "npm-purifier-commit-"));
+  try {
+    const git = (...args) => execFileSync("git", ["-C", tmp, ...args]);
+    git("init", "-q");
+    git("fetch", "-q", "--depth=1", url, rev);
+    const commit = git("cat-file", "commit", rev).toString("base64");
+    const gitlinks = git("ls-tree", "-r", rev)
+      .toString("utf8")
+      .split("\n")
+      .filter((line) => line.startsWith("160000 commit "))
+      .map((line) => {
+        const [meta, file] = line.split("\t");
+        return { path: file, rev: meta.split(" ")[2] };
+      });
+    return { commit, gitlinks };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+};
+
+// The submodules of the repository at `url`, recursively, with what a
+// build needs to make each of them again: its URL, its directory in the
+// checkout of the top repository, its commit and that commit's object.
+// `urls` lists every submodule of the checkout as submodulesOf finds them.
+const repositoryOf = (url, rev, gitlinks, urls, prefix) =>
+  gitlinks.flatMap((link) => {
+    const dir = path.posix.join(prefix, link.path);
+    const found = urls.find((s) => s.path === dir);
+    if (!found) throw new Error(`${url} at ${rev} has a submodule at ${dir} without a URL in .gitmodules`);
+    const { commit, gitlinks: inner } = commitOf(found.url, link.rev);
+    return [
+      { url: found.url, path: dir, rev: link.rev, commit, gitlinks: inner },
+      ...repositoryOf(found.url, link.rev, inner, urls, dir),
+    ];
+  });
+
 // The lockfile npm installs before preparing the dependency at `dir`, or
 // null when npm does not prepare it.
 const preparationLock = (dir) => {
@@ -152,17 +192,27 @@ const lockGit = (resolved) => {
     // submodules.
     const url = hosted.https({ noCommittish: true }).replace(/^git\+/, "");
     fetched = prefetch(url, rev, { submodules: false, leaveDotGit: false });
-    entry.git = { url, rev, submodules: false, leaveDotGit: false };
+    entry.git = { url, rev, submodules: false, leaveDotGit: false, commitObject: null };
     entry.archive = hosted.tarball({ noCommittish: false });
   } else {
-    // npm clones the repository and its submodules with git.
+    // npm clones the repository and its submodules with git. A checkout
+    // that keeps its .git directory has no stable hash, because git packs
+    // objects differently from run to run, so the run locks a plain
+    // checkout, and the raw commit objects from which a build makes the
+    // repositories again.
     const url = spec.fetchSpec;
     const probe = prefetch(url, rev, { submodules: false, leaveDotGit: false });
     const submodules = fs.existsSync(path.join(probe.path, ".gitmodules"));
-    fetched = prefetch(url, rev, { submodules, leaveDotGit: true });
-    entry.git = { url, rev, submodules, leaveDotGit: true };
+    fetched = submodules ? prefetch(url, rev, { submodules, leaveDotGit: false }) : probe;
+    // `leaveDotGit` asks the build for a .git directory, which it makes
+    // from the checkout and `commitObject`. `hash` is the NAR hash of the
+    // plain checkout.
+    const { commit, gitlinks } = commitOf(url, rev);
+    entry.git = { url, rev, submodules, leaveDotGit: true, commitObject: commit };
     entry.repository = url;
-    entry.submoduleUrls = submodulesOf(fetched.path, url);
+    entry.gitlinks = gitlinks;
+    const urls = submodulesOf(fetched.path, url);
+    entry.submodules = repositoryOf(url, rev, entry.gitlinks, urls, "");
   }
   entry.hash = fetched.hash;
   if (subdir) entry.subdir = subdir;

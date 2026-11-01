@@ -38,7 +38,7 @@ let
   cloneResolved = "git+https://example.invalid/npm-purifier-clone.git#c2eaed048fb06b92697c038ecaf17236a1a363fa";
   git = buildNpmProject {
     src = ./fixtures/git;
-    gitCheckouts.${cloneResolved} = repositories.clone;
+    gitCheckouts.${cloneResolved} = repositories.checkout;
   };
 
   # A project in a directory of a larger tree: it depends on a directory

@@ -67,4 +67,11 @@ let
 in
 {
   inherit sub clone;
+  # The plain checkout of `clone` with its submodule, as fetchgit makes it
+  # for the build.
+  checkout = runCommand "npm-purifier-test-checkout" { } ''
+    cp -r ${clone} "$out"
+    chmod -R u+w "$out"
+    rm -rf "$out/.git" "$out/vendor/sub/.git"
+  '';
 }

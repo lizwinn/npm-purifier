@@ -7,27 +7,39 @@
         "url": "https://codeberg.org/sailingthroughcode/remark-iptc-caption.git",
         "rev": "84da44035a4b19d689178a10610d75264775635b",
         "submodules": false,
-        "leaveDotGit": true
+        "leaveDotGit": true,
+        "commitObject": "dHJlZSA5ZGMyODYwYWZhZDNlZGNiNGNhZGViZjk0YTRjZTVmODZhYzM0Y2MwCnBhcmVudCAyZTAwMjk3MTFhMDI0ZTdiZWNkMDgwNmMwYWI4YzBlNzgwZjdmZjBkCmF1dGhvciBsdWtlIDxsdWthcy5zcGlla2VyQGdtYWlsLmNvbT4gMTc5MzE5MjY5NyArMDEwMApjb21taXR0ZXIgbHVrZSA8bHVrYXMuc3BpZWtlckBnbWFpbC5jb20+IDE3OTMxOTI2OTcgKzAxMDAKCnJlbWFyay1pcHRjLWNhcHRpb24gMS4xLjI6IGEgPGZpZ2NhcHRpb24+IG9uIHRoZSBsaW5lcyByaWdodCBhZnRlciBhIHBob3RvIGlzIHRoZSBwb3N0J3Mgb3duLCB0aGUgd2F5IHRvIGNhcHRpb24gYnkgaGFuZCBpbiBwbGFpbiAubWQsIGFuZCB3aW5zIG92ZXIgdGhlIHBob3RvJ3M6IHRoZSB0d28gYmVjb21lIG9uZSA8ZmlndXJlPiAoYSBvbmUtbGluZSA8ZmlnY2FwdGlvbj4gaW4gTURYIHRvbykuIEJlZm9yZSwgdGhlIHBob3RvIGdvdCBpdHMgZW1iZWRkZWQgY2FwdGlvbiBhcyB3ZWxsIGFuZCB0aGUgcG9zdCBzaG93ZWQgYm90aC4gVGVzdHM6IDE0IHBhc3M7IG9uIGNvZWxhY2FudGguY2ggb25seSB0aGUgUmFzcGJlcnJ5IFBpIGxvZ2dpbmcgcG9zdCBjaGFuZ2VzLCBub3cgY2FwdGlvbmVkIG9uY2UuCg=="
       },
       "repository": "https://codeberg.org/sailingthroughcode/remark-iptc-caption.git",
-      "submoduleUrls": [],
-      "hash": "sha256-nfdH4HfeTD6in2UkHeJ5s4q9qc8P/vRd2Qh+OkOyyys="
+      "gitlinks": [],
+      "submodules": [],
+      "hash": "sha256-2wGEVMAheNuGFxH8M3wnz8OmUDrs2T6wwGGa8pSX2Mk="
     },
     "git+https://example.invalid/npm-purifier-clone.git#c2eaed048fb06b92697c038ecaf17236a1a363fa": {
       "git": {
         "url": "https://example.invalid/npm-purifier-clone.git",
         "rev": "c2eaed048fb06b92697c038ecaf17236a1a363fa",
         "submodules": true,
-        "leaveDotGit": true
+        "leaveDotGit": true,
+        "commitObject": "dHJlZSAwOWJmZmFkODY4NDNmMzJlZjM3OTdmMWM2ZWIyOGZmMjFjNGJhNTQ3CmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHBhY2thZ2UK"
       },
       "repository": "https://example.invalid/npm-purifier-clone.git",
-      "submoduleUrls": [
+      "gitlinks": [
         {
-          "url": "https://example.invalid/npm-purifier-sub.git",
-          "path": "vendor/sub"
+          "path": "vendor/sub",
+          "rev": "6cd15a5a8aa49da187ca80d7e5f0920f43d22aa0"
         }
       ],
-      "hash": "sha256-FonWoCBuFomrdFg0j4UpjsnWXvs8wHRm/8vgr1FUhek=",
+      "submodules": [
+        {
+          "url": "https://example.invalid/npm-purifier-sub.git",
+          "path": "vendor/sub",
+          "rev": "6cd15a5a8aa49da187ca80d7e5f0920f43d22aa0",
+          "commit": "dHJlZSAzNjNiMmIyODllODE2MGZhMTQ1MjJiOWM5NTA0NTM4MjhlMTgyMzNhCmF1dGhvciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCmNvbW1pdHRlciBucG0tcHVyaWZpZXIgPHRlc3RzQG5wbS1wdXJpZmllci5pbnZhbGlkPiAxNzkzNDkxMjAwICswMDAwCgpBZGQgdGhlIHN1Ym1vZHVsZSdzIG1vZHVsZQo=",
+          "gitlinks": []
+        }
+      ],
+      "hash": "sha256-CumxwVYdwi+5XAhb2esa2or74nV49zo+O9dHW6GPPkI=",
       "packageLock": {
         "name": "npm-purifier-clone-fixture",
         "version": "1.0.0",
@@ -61,7 +73,8 @@
         "url": "https://github.com/jonschlinkert/is-number.git",
         "rev": "98e8ff1da1a89f93d1397a24d7413ed15421c139",
         "submodules": false,
-        "leaveDotGit": false
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "archive": "https://codeload.github.com/jonschlinkert/is-number/tar.gz/98e8ff1da1a89f93d1397a24d7413ed15421c139",
       "hash": "sha256-iXMMKTTQsq2JThh2km8KULeisQ9bR0VmN5p9GwkiXo8="
@@ -71,7 +84,8 @@
         "url": "https://github.com/nix-purifiers/npm-purifier.git",
         "rev": "2c8fcf8a6ca85cdaa8cf93803c226fb02f374e4e",
         "submodules": false,
-        "leaveDotGit": false
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "archive": "https://codeload.github.com/nix-purifiers/npm-purifier/tar.gz/2c8fcf8a6ca85cdaa8cf93803c226fb02f374e4e%3A%3Apath%3Atests%2Fgit-dependencies%2Fprepared",
       "hash": "sha256-61ToQ31WjQ44NfmpmzAtkHSkw4fA4ShCUTS0u2ORNV8=",

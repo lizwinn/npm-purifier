@@ -13,8 +13,14 @@
 # For the first, `cache` holds each archive, packed in Nix from a checkout
 # of the commit, with the index entry that makes npm's HTTP cache answer
 # the archive URL with it. For the second, `gitConfig` maps each
-# repository URL and submodule URL to a checkout in the store that keeps
-# its .git directory.
+# repository URL and submodule URL to a repository in the store that holds
+# the commit. A fetch that keeps the .git directory has no stable hash,
+# because git packs objects differently from run to run, so the build
+# makes each repository from a plain checkout and the raw commit object
+# that `npm nix-lock` recorded: it writes the checkout's files and
+# submodule entries as the commit's tree, writes the commit object, checks
+# that the object's ID is the locked commit, and marks the repository
+# shallow at that commit, so git looks for no parents.
 #
 # npm prepares a git dependency that has a prepare, build or install
 # script: it installs the dependency's own dependencies and runs the
@@ -26,29 +32,33 @@
 # archive carries that lockfile inside already.
 #
 # The entries take the shape of the shared purifier library's git entries:
-# { path, git = { url, rev, submodules, leaveDotGit }, hash }.
+# { path, git = { url, rev, submodules, leaveDotGit, commitObject }, hash }.
+# `hash` is the NAR hash of the plain checkout, and `leaveDotGit` asks for
+# the .git directory made from the checkout and `commitObject`.
 {
   lib,
   runCommand,
   writeText,
   writeShellScript,
   fetchgit,
+  gitMinimal,
   openssl,
   # The git dependencies, by their `resolved`, as lock.nix returns them.
   git,
-  # Checkouts that replace the fetches of git dependencies, by `resolved`.
-  # A dependency npm downloads as an archive takes a plain checkout; one
-  # npm clones takes a repository that holds the commit, with its
-  # submodules checked out.
+  # Plain checkouts, with submodules checked out where npm clones them,
+  # that replace the fetches of git dependencies, by `resolved`.
   checkouts ? { },
 }:
 let
   fetch =
     resolved: entry:
     checkouts.${resolved} or (fetchgit {
-      inherit (entry.git) url rev leaveDotGit;
+      inherit (entry.git) url rev;
       inherit (entry) hash;
       fetchSubmodules = entry.git.submodules;
+      # The hash is the NAR hash of the plain checkout. `repositories`
+      # makes a .git directory from it and `commitObject`.
+      leaveDotGit = false;
     });
 
   archives = lib.filterAttrs (_: entry: entry ? archive) git;
@@ -91,26 +101,83 @@ let
     )}
   '';
 
-  # The settings that point git at the checkouts: each repository URL and
-  # submodule URL to its directory in the store, local clones of
+  # The repositories of a cloned dependency, made again: `repository` for
+  # the dependency, and `modules/<path>` for the submodule at <path> of
+  # its checkout.
+  repositories =
+    resolved: entry:
+    let
+      checkout = fetch resolved entry;
+      # `dest` is shell text, so that it can name $out.
+      make = dest: dir: repo: ''
+        make ${dest} ${checkout}/${lib.escapeShellArg dir} ${repo.rev} ${lib.escapeShellArg repo.commit} ${
+          lib.escapeShellArgs (map (l: "${l.path}=${l.rev}") repo.gitlinks)
+        }
+      '';
+    in
+    runCommand "npm-purifier-git-repositories" { nativeBuildInputs = [ gitMinimal ]; } ''
+      export HOME="$TMPDIR"
+      git config --global safe.directory '*'
+      # make <repository> <checkout> <commit> <commit object, base64>
+      #   [<submodule path>=<submodule commit>]...
+      make() {
+        local dest="$1" work="$2" rev="$3" object="$4"
+        shift 4
+        git init -q --bare "$dest"
+        export GIT_DIR="$dest" GIT_INDEX_FILE="$TMPDIR/index"
+        rm -f "$GIT_INDEX_FILE"
+        git --work-tree="$work" add -A -f .
+        for link in "$@"; do
+          git rm -r -q --cached "''${link%%=*}"
+          git update-index --add --cacheinfo "160000,''${link#*=},''${link%%=*}"
+        done
+        tree="$(git write-tree)"
+        printf '%s' "$object" | base64 -d > "$TMPDIR/commit"
+        want="$(sed -n '1s/^tree //p' "$TMPDIR/commit")"
+        if [ "$tree" != "$want" ]; then
+          echo "npm-purifier: the checkout of $rev gives tree $tree, not the commit's tree $want" >&2
+          exit 1
+        fi
+        if [ "$(git hash-object -t commit -w "$TMPDIR/commit")" != "$rev" ]; then
+          echo "npm-purifier: the recorded commit object is not commit $rev" >&2
+          exit 1
+        fi
+        echo "$rev" > "$dest/shallow"
+        git update-ref refs/heads/main "$rev"
+        git symbolic-ref HEAD refs/heads/main
+        unset GIT_DIR GIT_INDEX_FILE
+      }
+      mkdir -p "$out/modules"
+      ${make ''"$out/repository"'' "." {
+        inherit (entry.git) rev;
+        commit = entry.git.commitObject;
+        inherit (entry) gitlinks;
+      }}
+      ${lib.concatMapStrings (s: make ''"$out/modules/"${lib.escapeShellArg s.path}'' s.path s) (
+        entry.submodules or [ ]
+      )}
+    '';
+
+  # The settings that point git at the repositories: each repository URL
+  # and submodule URL to its repository in the store, local clones of
   # submodules allowed, and the store's owner trusted.
   gitConfig =
     lib.concatLists (
       lib.mapAttrsToList (
         resolved: entry:
         let
-          checkout = fetch resolved entry;
+          made = repositories resolved entry;
         in
         [
           {
-            key = "url.file://${checkout}.insteadOf";
+            key = "url.file://${made}/repository.insteadOf";
             value = entry.repository;
           }
         ]
         ++ map (s: {
-          key = "url.file://${checkout}/${s.path}.insteadOf";
+          key = "url.file://${made}/modules/${s.path}.insteadOf";
           value = s.url;
-        }) (entry.submoduleUrls or [ ])
+        }) (entry.submodules or [ ])
       ) clones
     )
     ++ lib.optionals (clones != { }) [
