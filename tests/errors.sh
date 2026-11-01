@@ -73,7 +73,11 @@ expect old 'run `npm install` with npm 7 or newer'
 
 # A tarball without an integrity.
 lockfile no-integrity <<< '{"lockfileVersion":3,"packages":{"node_modules/a":{"resolved":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"}}}'
-expect no-integrity 'run `npm install` to record one'
+expect no-integrity 'run `npm nix-lock` to record one'
+
+# A tarball without a URL, as some lockfiles leave it.
+lockfile no-resolved <<< '{"lockfileVersion":3,"packages":{"node_modules/url-join":{"version":"4.0.1"}}}'
+expect no-resolved 'node_modules/url-join has no resolved URL'
 
 # A source npm-purifier does not know.
 lockfile unknown <<< '{"lockfileVersion":3,"packages":{"node_modules/a":{"resolved":"ftp://example.invalid/a.tgz"}}}'

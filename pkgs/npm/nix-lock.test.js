@@ -19,6 +19,8 @@ const {
   resolveSubmoduleUrl,
   submodulesOf,
   needsPreparation,
+  incompleteEntries,
+  completeLock,
 } = require("./nix-lock.js");
 
 const sha = "98e8ff1da1a89f93d1397a24d7413ed15421c139";
@@ -102,6 +104,35 @@ test("submodulesOf finds nested submodules with their directories", () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the lock run completes registry entries without a URL or an integrity", () => {
+  const lock = {
+    packages: {
+      "": { name: "root" },
+      "node_modules/url-join": { version: "4.0.1", license: "MIT" },
+      "node_modules/a/node_modules/@s/b": { version: "2.0.0", resolved: "https://r/@s/b/-/b-2.0.0.tgz" },
+      "node_modules/c": { version: "1.0.0", resolved: "https://r/c/-/c-1.0.0.tgz", integrity: "sha512-c" },
+      "node_modules/d": { resolved: "packages/d", link: true },
+      "node_modules/e": { version: "1.0.0", resolved: `git+ssh://git@github.com/o/e.git#${sha}` },
+    },
+  };
+  assert.deepEqual(incompleteEntries(lock), ["node_modules/url-join", "node_modules/a/node_modules/@s/b"]);
+  const asked = [];
+  completeLock(lock, (name, version) => {
+    asked.push(`${name}@${version}`);
+    return { tarball: `https://r/${name}-${version}.tgz`, integrity: `sha512-${name}` };
+  });
+  assert.deepEqual(asked, ["url-join@4.0.1", "@s/b@2.0.0"]);
+  assert.deepEqual(lock.packages["node_modules/url-join"], {
+    version: "4.0.1",
+    resolved: "https://r/url-join-4.0.1.tgz",
+    integrity: "sha512-url-join",
+    license: "MIT",
+  });
+  assert.equal(lock.packages["node_modules/a/node_modules/@s/b"].resolved, "https://r/@s/b/-/b-2.0.0.tgz");
+  assert.equal(lock.packages["node_modules/a/node_modules/@s/b"].integrity, "sha512-@s/b");
+  assert.deepEqual(Object.keys(lock.packages["node_modules/url-join"]), ["version", "resolved", "integrity", "license"]);
 });
 
 test("npm prepares a dependency with a preparing script or workspaces", () => {

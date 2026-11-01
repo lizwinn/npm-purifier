@@ -2,7 +2,10 @@
 //
 // The lock run of npm-purifier (`npm nix-lock`). package-lock.json names
 // every registry tarball with its integrity, so Nix fetches those from it
-// alone. A git dependency is the exception: npm skips its integrity and
+// alone. Some lockfiles leave the URL or the integrity of an entry out,
+// and npm fetches the registry's metadata for it at install time; the run
+// records both in package-lock.json, as a later `npm install` would. A git
+// dependency is the exception: npm skips its integrity and
 // fetches it again from the repository, so this run records what a Nix
 // build needs to serve it offline, in npm-purifier.lock.json beside
 // package-lock.json:
@@ -47,6 +50,49 @@ const needsPreparation = (manifest) =>
   Boolean(manifest.workspaces) || prepareScripts.some((s) => (manifest.scripts || {})[s]);
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+
+// The installed registry packages of a lockfile that lack a `resolved` URL
+// or an `integrity`, by their key. npm fetches the registry's metadata to
+// fill such an entry in at install time, which an offline install cannot.
+const incompleteEntries = (lock) =>
+  Object.entries(lock.packages || {})
+    .filter(([key, entry]) => {
+      if (key === "" || !key.includes("node_modules/")) return false;
+      if (entry.link || entry.inBundle) return false;
+      if (entry.resolved && !/^https?:\/\//.test(entry.resolved)) return false;
+      return !entry.resolved || !entry.integrity;
+    })
+    .map(([key]) => key);
+
+// The name of the package installed at a lockfile key.
+const nameOf = (key, entry) => entry.name || key.slice(key.lastIndexOf("node_modules/") + "node_modules/".length);
+
+// Fills in the `resolved` and `integrity` of each incomplete entry, from
+// `dist`, which gives the registry's { tarball, integrity } for a name and
+// a version. The fields go where npm writes them, after `version`.
+const completeLock = (lock, dist) => {
+  const keys = incompleteEntries(lock);
+  for (const key of keys) {
+    const entry = lock.packages[key];
+    const found = dist(nameOf(key, entry), entry.version);
+    const { version, resolved, integrity, ...rest } = entry;
+    lock.packages[key] = {
+      version,
+      resolved: resolved || found.tarball,
+      integrity: integrity || found.integrity,
+      ...rest,
+    };
+  }
+  return keys;
+};
+
+const registryDist = (name, version) =>
+  JSON.parse(
+    execFileSync(npm, ["view", `${name}@${version}`, "dist", "--json"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    }),
+  );
 
 // The git dependencies of a lockfile, by their `resolved`.
 const gitDependencies = (lock) => {
@@ -244,6 +290,16 @@ const lockGit = (resolved) => {
 const main = (root) => {
   const packageLockPath = path.join(root, "package-lock.json");
   const purifierLockPath = path.join(root, "npm-purifier.lock.json");
+  const packageLock = readJson(packageLockPath);
+  const completed = completeLock(packageLock, registryDist);
+  if (completed.length > 0) {
+    fs.writeFileSync(packageLockPath, JSON.stringify(packageLock, null, 2) + "\n");
+    const shown = completed.slice(0, 3).join(", ");
+    const more = completed.length > 3 ? ` and ${completed.length - 3} more` : "";
+    process.stderr.write(
+      `npm-purifier: recorded the tarball URL and integrity of ${shown}${more} in package-lock.json\n`,
+    );
+  }
   const packageLockText = fs.readFileSync(packageLockPath);
   // A git dependency names its commit, so an entry made for the same
   // `resolved` still holds; the run reuses it rather than fetching again.
@@ -277,7 +333,15 @@ const main = (root) => {
 };
 
 // The parts that need no network, for pkgs/npm/nix-lock.test.js.
-module.exports = { gitDependencies, sourceOf, resolveSubmoduleUrl, submodulesOf, needsPreparation };
+module.exports = {
+  gitDependencies,
+  sourceOf,
+  resolveSubmoduleUrl,
+  submodulesOf,
+  needsPreparation,
+  incompleteEntries,
+  completeLock,
+};
 
 if (require.main === module) {
   main(path.resolve(process.argv[2] || "."));

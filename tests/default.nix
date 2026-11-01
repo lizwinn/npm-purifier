@@ -50,6 +50,9 @@ let
     projectDir = "app";
   };
 
+  # Real projects, pinned (real-world.nix).
+  real = import ./real-world.nix { inherit buildNpmProject; };
+
   # Evaluates the lockfile reader on a lockfile written inline.
   readLock =
     system: lock:
@@ -263,6 +266,22 @@ in
 
   # The wrapper itself builds.
   npm = withOverlay.npm-purifier.npm;
+
+  # commander.js builds, and its tests and type checks pass; the package
+  # depends on them.
+  real-commander = real.commander.packages.commander;
+
+  # http-server builds from its completed lockfile, its tests pass, and its
+  # command runs.
+  real-http-server =
+    pkgs.runCommand "real-http-server-check"
+      {
+        nativeBuildInputs = [ real.httpServer.packages.http-server ];
+      }
+      ''
+        http-server --version | grep -qx v14.1.2
+        touch $out
+      '';
 
   # The unit tests of the lock run (pkgs/npm/nix-lock.test.js).
   lock-run-units =

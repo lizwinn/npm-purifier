@@ -23,6 +23,7 @@
 #                     the archives of git dependencies
 #   build             the project after `npm ci`, its build scripts and
 #                     `npm pack`: one tarball per package of the project
+#   check             the project's `test` script, run after its build scripts
 #   productionModules the production dependencies (`npm ci --omit=dev`)
 #   packages.<name>   package <name> of the project, installed with its
 #                     production dependencies under lib/node_modules, with
@@ -61,8 +62,12 @@
   # packages are packed. A script the root package defines runs at the
   # root; otherwise it runs in each workspace that defines it.
   buildScripts ? [ "build" ],
-  # Runs the `test` script the same way, after the build scripts.
+  # Makes the packages depend on `check`, which runs the `test` script the
+  # same way, after the build scripts.
   doCheck ? false,
+  # Arguments for the `test` script, as `npm test -- <arguments>` passes
+  # them.
+  checkFlags ? [ ],
   # Tools the build scripts and the dependencies' install scripts need.
   # Python is there for node-gyp.
   nativeBuildInputs ? [ python3 ],
@@ -151,6 +156,9 @@ let
     mkdir -p "$HOME" "$npm_config_cache/_cacache"
     cp -rs --no-preserve=mode ${cache.tree}/. "$npm_config_cache/_cacache"
     ${cache.environment}
+    # npm installs from the lockfile this build read, which is the
+    # project's own unless `lockFile` names another.
+    cp --no-preserve=mode ${lockFile} package-lock.json
   '';
 
   # npm runs every package script as `<script-shell> -c <command>`, with
@@ -193,10 +201,16 @@ let
   # every workspace that defines it otherwise.
   runScript = ''
     runScript() {
-      if node -e 'process.exit(require("./package.json").scripts?.[process.argv[1]] ? 0 : 1)' "$1"; then
-        npm run "$1"
+      local script="$1"
+      shift
+      local extra=()
+      if [ "$#" -gt 0 ]; then
+        extra=(-- "$@")
+      fi
+      if node -e 'process.exit(require("./package.json").scripts?.[process.argv[1]] ? 0 : 1)' "$script"; then
+        npm run "$script" "''${extra[@]}"
       elif node -e 'process.exit(require("./package.json").workspaces ? 0 : 1)'; then
-        npm run "$1" --workspaces --if-present
+        npm run "$script" --workspaces --if-present "''${extra[@]}"
       fi
     }
   '';
@@ -219,7 +233,6 @@ let
       for script in ${lib.escapeShellArgs buildScripts}; do
         runScript "$script"
       done
-      ${lib.optionalString doCheck "runScript test"}
       runHook postBuild
     '';
     # `npm pack` runs the packages' prepack, prepare and postpack scripts,
@@ -239,6 +252,34 @@ let
     '';
     # The tarballs are what npm publishes, byte for byte.
     dontFixup = true;
+  };
+
+  # The project's tests, after the build scripts. Tests often run the
+  # project's own scripts, whose `#!/usr/bin/env` lines find no interpreter
+  # in the sandbox, so the check gives every script of its copy of the
+  # source an absolute interpreter first. The check runs apart from
+  # `build`, whose tarballs keep the files as the project has them.
+  check = stdenv.mkDerivation {
+    name = "npm-project-check";
+    src = filteredSrc;
+    nativeBuildInputs = inputs;
+    inherit buildInputs;
+    dontConfigure = true;
+    buildPhase = ''
+      runHook preBuild
+      ${npmSetup}
+      ${npmInstall [ ]}
+      ${runScript}
+      for script in ${lib.escapeShellArgs buildScripts}; do
+        runScript "$script"
+      done
+      patchShebangs "$srcRoot" > /dev/null
+      runScript test ${lib.escapeShellArgs checkFlags}
+      runHook postBuild
+    '';
+    installPhase = ''
+      touch "$out"
+    '';
   };
 
   productionModules = stdenv.mkDerivation {
@@ -295,6 +336,8 @@ let
       dontBuild = true;
       # The commands' interpreter is this Node.js.
       buildInputs = [ node ];
+      # With doCheck, a package exists only once the project's tests pass.
+      ${if doCheck then "tested" else null} = check;
       installPhase = ''
         runHook preInstall
         modules="$out/lib/node_modules"
@@ -337,7 +380,7 @@ let
     };
 in
 {
-  inherit build productionModules;
+  inherit build productionModules check;
   cache = cache.tree;
   packages = lib.mapAttrs (_: mkPackage) lock.packages;
   # What the `npm` wrapper builds for the project: the content of npm's

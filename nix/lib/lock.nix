@@ -89,10 +89,12 @@ let
       resolved = entry.resolved;
       isHttp = lib.hasPrefix "https://" resolved || lib.hasPrefix "http://" resolved;
     in
-    if !isHttp then
+    if !(entry ? resolved) then
+      throw "npm-purifier: ${key} has no resolved URL in ${name}; run `npm nix-lock` to record it."
+    else if !isHttp then
       throw "npm-purifier: ${key} in ${name} comes from ${resolved}, which is neither a tarball URL, a git repository nor a path."
     else if !(entry ? integrity) then
-      throw "npm-purifier: ${key} (${resolved}) has no integrity in ${name}; run `npm install` to record one."
+      throw "npm-purifier: ${key} (${resolved}) has no integrity in ${name}; run `npm nix-lock` to record one."
     else
       let
         # An integrity may list several hashes; the strongest comes first
@@ -128,19 +130,18 @@ let
       isInstalled key
       && !(entry.link or false)
       && !(entry.inBundle or false)
-      && entry ? resolved
-      && !lib.hasPrefix "file:" entry.resolved
+      && !lib.hasPrefix "file:" (entry.resolved or "")
     ) ps;
 
   tarballsOf =
     name: ps:
     lib.mapAttrsToList (key: entry: remote name key entry) (
-      lib.filterAttrs (_: entry: !isGit entry.resolved) (installed ps)
+      lib.filterAttrs (_: entry: !isGit (entry.resolved or "")) (installed ps)
     );
   gitOf =
     ps:
     lib.mapAttrsToList (_: entry: entry.resolved) (
-      lib.filterAttrs (_: entry: isGit entry.resolved) (installed ps)
+      lib.filterAttrs (_: entry: isGit (entry.resolved or "")) (installed ps)
     );
 
   purifierLockName = toString purifierLockFile;
