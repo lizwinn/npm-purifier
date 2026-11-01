@@ -95,13 +95,23 @@ let
     git
     ;
 
+  # The lock in memory, which fails evaluation with the problems of the
+  # lockfiles.
+  lock = lib.purifier.checkLock (
+    lib.npm-purifier.readLock {
+      inherit
+        src
+        projectDir
+        packageLock
+        lockFile
+        ;
+    }
+  );
+
   cache = pkgs.callPackage ./cache.nix {
-    inherit fetchers gitCheckouts;
+    inherit fetchers gitCheckouts lock;
     inherit (lib) purifier;
-    lockFile = packageLock;
-    purifierLockFile = lockFile;
   };
-  inherit (cache) lock;
 
   defaultSrcFilter =
     path: type:
@@ -218,7 +228,7 @@ let
     }
   '';
 
-  ownPackages = builtins.attrValues lock.packages;
+  ownPackages = builtins.attrValues lock.outputs;
 
   inputs = [ node ] ++ lib.optional cache.needsGit git ++ nativeBuildInputs;
 
@@ -384,9 +394,9 @@ let
 in
 {
   inherit release tests productionModules;
-  inherit (cache) fetches;
+  fetches = lock.entries;
   cache = cache.tree;
-  packages = lib.mapAttrs (_: mkPackage) lock.packages;
+  packages = lib.mapAttrs (_: mkPackage) lock.outputs;
   # What the `npm` wrapper builds for the project: the content of npm's
   # cache in `cache/`, and the shell commands that set up the environment
   # npm runs in, in `environment`. The Node.js of nixpkgs prepares git

@@ -56,8 +56,14 @@ The root package, each workspace and each local directory the project
 depends on become `packages.<name>`, installed with their production
 dependencies and with their commands in `bin/`. `release` holds the
 tarballs `npm publish` uploads, and `tests` runs the `test` script in a
-derivation of its own. `nix/lib/build-npm-project.nix` documents every
-argument of the builder.
+derivation of its own. `fetches` lists every download as an entry of the
+purifier library, for SBOM, license and vulnerability tools.
+`nix/lib/build-npm-project.nix` documents every argument of the builder.
+
+`npm-purifier.lib.npm-purifier.readLock { src = ./.; }` reads the
+lockfiles without building anything. It returns the downloads as
+`entries`, the packages as `outputs`, and, in `problems`, each reason the
+lockfiles cannot be used, which is the same shape every purifier returns.
 
 ## Everyday loop
 
@@ -77,6 +83,11 @@ dependencies Nix prefetched.
   asks the registry at install time.
 - It writes `npm-purifier.lock.json` for the git dependencies, or removes
   it when the project has none.
+
+`npm-purifier lock` keeps the versions `package-lock.json` resolves.
+`npm-purifier update` moves them: it runs `npm update` on every
+dependency, or on the packages named after it, and then locks as
+`npm-purifier lock` does, so both lockfiles change in one run.
 
 `npm-purifier publish` builds the package in the current directory with
 Nix and runs `npm publish` on that tarball. Further arguments go to
@@ -100,8 +111,11 @@ lockfiles name.
 A command that needs a download the lockfiles do not name stops with
 npm's `ENOTCACHED` error, and the wrapper adds a line that names
 `npm-purifier lock`. `NPM_PURIFIER=0` turns the wrapper off for one
-command, and `NPM_PURIFIER_LOCKFILE` names an `npm-purifier.lock.json`
-other than the one at the project root.
+command. `NPM_PURIFIER_LOCKFILE` names an `npm-purifier.lock.json` other
+than the one at the project root, for the wrapper and for every
+`npm-purifier` command. A flake that keeps the file outside the project
+can set it in its development shell to the path it passes the builder as
+`lockFile`.
 
 ## Editor
 
@@ -114,7 +128,8 @@ wrapper when it starts from the `nix develop` shell, or from a direnv
 ## Errors and fixes
 
 The builder checks the lockfiles at evaluation time and stops with a
-message that names the fix:
+message that names the fix. `readLock` lists the same messages in
+`problems`.
 
 | Message | Cause | Fix |
 | --- | --- | --- |

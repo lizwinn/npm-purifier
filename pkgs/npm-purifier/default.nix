@@ -7,7 +7,11 @@
 #                           package.json (`npm install --package-lock-only`),
 #                           records the tarball URL and integrity of entries
 #                           that lack them, and writes npm-purifier.lock.json
-#                           for the git dependencies (lock.js)
+#                           for the git dependencies (lock.js); it keeps
+#                           the versions package-lock.json resolves
+#   npm-purifier update     updates the dependencies with `npm update`
+#                           (every one, or the packages named after it),
+#                           then locks as `lock` does
 #   npm-purifier prefetch   builds, in the Nix store, the npm cache of every
 #                           locked tarball and git dependency, the Node.js
 #                           and npm that run the project, and the environment
@@ -19,7 +23,8 @@
 #                           passing the remaining arguments on
 #
 # Every command takes `--lockfile <path>`, the npm-purifier.lock.json to
-# read and write; the default is the one at the project root. The builds
+# read and write. Without it, the commands take NPM_PURIFIER_LOCKFILE, and
+# without that the one at the project root. The builds
 # evaluate this flake (nix/lib/project.nix), so they use the same builder
 # and library as a Nix build of the project does.
 {
@@ -45,7 +50,7 @@ writeShellApplication {
     system=${stdenv.hostPlatform.system}
 
     usage() {
-      echo "usage: npm-purifier lock|prefetch|publish [--lockfile <path>] [arguments]" >&2
+      echo "usage: npm-purifier lock|update|prefetch|publish [--lockfile <path>] [arguments]" >&2
       exit 2
     }
 
@@ -53,6 +58,9 @@ writeShellApplication {
     [ -n "$command" ] || usage
     shift
     lockfile=
+    if [ -n "''${NPM_PURIFIER_LOCKFILE:-}" ]; then
+      lockfile="$(realpath -m "$NPM_PURIFIER_LOCKFILE")"
+    fi
     rest=()
     while [ "$#" -gt 0 ]; do
       case "$1" in
@@ -100,6 +108,12 @@ writeShellApplication {
 
     case "$command" in
       lock)
+        NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
+          NPM_PURIFIER_NPM="$npm" \
+          node ${./lock.js} "$root" "$lockfile"
+        ;;
+      update)
+        (cd "$root" && "$npm" update --package-lock-only --ignore-scripts --no-audit --no-fund "''${rest[@]}")
         NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
           NPM_PURIFIER_NPM="$npm" \
           node ${./lock.js} "$root" "$lockfile"

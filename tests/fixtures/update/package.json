@@ -1,0 +1,10 @@
+{
+  "name": "update-fixture",
+  "version": "1.0.0",
+  "description": "A project that pins an old semver, for the update check of npm-purifier.",
+  "license": "MIT",
+  "dependencies": {
+    "is-number": "github:jonschlinkert/is-number#98e8ff1da1a89f93d1397a24d7413ed15421c139",
+    "semver": "^7.0.0"
+  }
+}

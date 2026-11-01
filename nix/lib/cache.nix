@@ -3,11 +3,9 @@
 # Everything npm reads offline for one project, shared by the sandboxed
 # build and the `npm` wrapper. It returns
 #
-#   lock          what lock.nix read from the lockfiles
 #   tree          the content of npm's cache (`_cacache`): the locked
 #                 tarballs, laid out by the shared purifier library, and
 #                 the archives of git dependencies with their index entries
-#   fetches       the purifier library entries that the cache fetches
 #   environment   shell commands that set up the environment npm runs in:
 #                 the preparation of git dependencies and the git settings
 #                 for cloned ones
@@ -20,43 +18,36 @@
   stdenv,
   # The shared purifier library.
   purifier,
-  lockFile,
-  purifierLockFile ? dirOf lockFile + "/npm-purifier.lock.json",
+  # The lock in memory of the project (read-lock.nix).
+  lock,
   # Fetchers that replace those of the purifier library.
   fetchers ? { },
   # Checkouts that replace the fetches of git dependencies (see git.nix).
   gitCheckouts ? { },
 }:
 let
-  lock = import ./lock.nix {
-    inherit
-      lib
-      lockFile
-      purifierLockFile
-      purifier
-      ;
-    inherit (stdenv.hostPlatform) system;
-  };
+  # The entries this system's install needs.
+  entries = purifier.entriesFor stdenv.hostPlatform.system lock;
 
   tarballs = purifier.tree (
     {
       inherit pkgs;
       name = "npm-purifier-tarballs";
-      entries = lock.downloads;
+      entries = builtins.filter (entry: !(entry ? git)) entries;
     }
     // fetchers
   );
 
   git = callPackage ./git.nix {
-    inherit (lock) git;
+    git = lib.listToAttrs (
+      map (entry: lib.nameValuePair entry.resolved entry) (builtins.filter (entry: entry ? git) entries)
+    );
     inherit purifier fetchers;
     checkouts = gitCheckouts;
   };
 in
 {
-  inherit lock;
   inherit (git) environment needsGit repositories;
-  fetches = lock.downloads ++ git.entries;
   tree = symlinkJoin {
     name = "npm-purifier-cache";
     paths = [

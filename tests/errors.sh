@@ -25,13 +25,8 @@ expect() {
     let
       # The library of this flake, which holds the purifier library.
       lib = (builtins.getFlake \"git+file://$root\").lib;
-      lock = import $root/nix/lib/lock.nix {
-        inherit lib;
-        inherit (lib) purifier;
-        system = builtins.currentSystem;
-        lockFile = $dir/package-lock.json;
-      };
-    in builtins.deepSeq [ lock.downloads lock.git lock.packages ] true
+      lock = lib.purifier.checkLock (lib.npm-purifier.readLock { src = $dir; });
+    in builtins.deepSeq lock true
   " 2>&1)"; then
     echo "$1: evaluated, but should have failed" >&2
     status=1

@@ -26,7 +26,8 @@ purifier="$work/command/bin/npm-purifier"
 relock() {
   local fixture="$root/tests/fixtures/$1" copy="$work/$1"
   mkdir -p "$copy"
-  cp -r "$fixture/." "$copy"
+  # The fixture's own files, without what an editor or agent left there.
+  (cd "$fixture" && find . -type f -not -path './.claude/*' -exec cp --parents {} "$copy" \;)
   chmod -R u+w "$copy"
   (cd "$copy" && "$purifier" lock)
   diff -u "$fixture/package-lock.json" "$copy/package-lock.json"
@@ -49,3 +50,5 @@ relock app
 relock workspaces
 relock git
 relock paths/app
+# `lock` keeps the old semver that `update` would move.
+relock update

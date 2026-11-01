@@ -12,8 +12,9 @@
 #
 # Each dependency is a git entry of the shared purifier library,
 # { path, git = { url, rev, submodules, leaveDotGit, commitObject }, hash },
-# which the library fetches. lock.nix makes it from the dependency's
-# `resolved` in package-lock.json and its entry in npm-purifier.lock.json. For the first way, `cache` holds each archive,
+# which the library fetches. readLock (read-lock.nix) makes it from the
+# dependency's `resolved` in package-lock.json and its entry in
+# npm-purifier.lock.json. For the first way, `cache` holds each archive,
 # packed in Nix from the checkout, with the index entry that makes npm's
 # HTTP cache answer the archive URL with it. For the second, the entry has
 # `leaveDotGit`, so the library rebuilds the repository's .git directory
@@ -44,7 +45,8 @@
   purifier,
   # Fetchers that replace those of the purifier library.
   fetchers ? { },
-  # The git dependencies, by their `resolved`, as lock.nix returns them.
+  # The git dependencies, by their `resolved`, as the entries readLock
+  # returns.
   git,
   # Plain checkouts, with submodules checked out where npm clones them,
   # that replace the fetches of git dependencies, by `resolved`.
@@ -68,15 +70,13 @@ let
     }
   );
 
-  # The library entry of a dependency: lock.nix keeps the entry's own
-  # fields, and the library needs only these.
+  # The library entry of a dependency, without the fields only npm needs.
   entryOf = entry: {
-    path = "git/${entry.git.rev}";
-    inherit (entry) git hash;
+    inherit (entry) path git hash;
   };
 
-  archives = lib.filterAttrs (_: entry: entry ? archive) git;
-  clones = lib.filterAttrs (_: entry: !(entry ? archive)) git;
+  archives = lib.filterAttrs (_: entry: entry ? archiveUrl) git;
+  clones = lib.filterAttrs (_: entry: !(entry ? archiveUrl)) git;
 
   lockFileOf = entry: writeText "package-lock.json" (builtins.toJSON entry.packageLock);
   injected = entry: entry.injectPackageLock or false;
@@ -103,7 +103,7 @@ let
         content="$out/content-v2/sha512/''${hex:0:2}/''${hex:2:2}/''${hex:4}"
         mkdir -p "$(dirname "$content")"
         cp "$work/archive.tgz" "$content"
-        url=${lib.escapeShellArg entry.archive}
+        url=${lib.escapeShellArg entry.archiveUrl}
         key="make-fetch-happen:request-cache:$url"
         json="{\"key\":\"$key\",\"integrity\":\"$integrity\",\"time\":0,\"metadata\":{\"url\":\"$url\",\"reqHeaders\":{},\"resHeaders\":{},\"options\":{\"compress\":true}}}"
         keyHash="$(printf '%s' "$key" | sha256sum | cut -d' ' -f1)"
@@ -230,8 +230,6 @@ let
 in
 {
   inherit cache gitConfig prefetchNpmDeps;
-  # The purifier library entries of the git dependencies.
-  entries = lib.mapAttrsToList (_: entryOf) git;
   # The repositories made for each cloned dependency, by `resolved`.
   repositories = lib.mapAttrs repositories clones;
   # Whether the install clones repositories with git.
