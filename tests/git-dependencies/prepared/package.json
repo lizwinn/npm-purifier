@@ -1,0 +1,16 @@
+{
+  "name": "npm-purifier-prepared-fixture",
+  "version": "1.0.0",
+  "description": "A git dependency of the tests: npm prepares it, and its prepare script needs a dev dependency. The repository has no lockfile for it.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prepare": "node build.js"
+  },
+  "devDependencies": {
+    "is-number": "7.0.0"
+  }
+}
