@@ -10,9 +10,7 @@ optional next step.
 From the project root:
 
 ```zsh
-nix shell \
-  'github:nix-purifiers/npm-purifier#npm' \
-  'github:nix-purifiers/npm-purifier#npm-purifier'
+nix shell 'github:nix-purifiers/npm-purifier#toolchain'
 npm-purifier lock
 npm ci
 npm run build
@@ -42,7 +40,7 @@ For persistent use, add these packages through your usual Nix configuration.
 The purifier contract runs the development loop through the build tool's
 own command. npm has no plugin mechanism through which npm-purifier could
 give that command the locked downloads, so the loop runs through the
-`npm` wrapper that `nix develop github:nix-purifiers/npm-purifier` puts on
+`npm` wrapper that `nix shell 'github:nix-purifiers/npm-purifier#toolchain'` puts on
 `PATH`. The wrapper takes npm's own commands and arguments.
 
 The `npm` wrapper passes every command to npm. The commands that change
@@ -195,8 +193,8 @@ recommended setup.
 Editors and language servers read `node_modules`, which `npm ci` through
 the wrapper fills as plain npm does, so they need no setup of their own.
 An editor that runs npm itself (task runners, script panels) gets the
-wrapper when it starts from the `nix develop` shell, or from a direnv
-`use flake` of a flake whose development shell includes the wrapper.
+wrapper when it starts from `nix shell` with the toolchain package,
+or from your usual environment configuration with the wrapper on `PATH`.
 
 ## Troubleshooting
 
@@ -300,7 +298,7 @@ work offline as usual:
 ```zsh
 git clone https://github.com/tj/commander.js
 cd commander.js
-nix develop github:nix-purifiers/npm-purifier
+nix shell 'github:nix-purifiers/npm-purifier#toolchain'
 npm-purifier lock
 npm ci
 npm test
@@ -335,7 +333,7 @@ checkout, and the checkout stays as the authors published it:
 ```zsh
 git clone https://github.com/http-party/http-server
 cd http-server
-nix develop github:nix-purifiers/npm-purifier
+nix shell 'github:nix-purifiers/npm-purifier#toolchain'
 npm-purifier lock --lockfile ../http-server.lock.json
 ```
 

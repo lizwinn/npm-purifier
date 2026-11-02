@@ -35,6 +35,16 @@
     { config, pkgs, ... }:
     {
       packages.default = pkgs.npm-purifier.npm-purifier;
+      # The interactive toolchain is a package so nix shell can expose it
+      # without entering the derivation's build environment.
+      packages.toolchain = pkgs.buildEnv {
+        name = "npm-purifier-toolchain";
+        paths = [
+          (pkgs.lib.hiPrio config.packages.npm)
+          config.packages.npm-purifier
+          pkgs.nodejs
+        ];
+      };
       devShells.default = pkgs.mkShell {
         packages = [
           config.packages.npm
