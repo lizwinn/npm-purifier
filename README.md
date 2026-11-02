@@ -10,7 +10,8 @@ optional next step.
 Install the integration into your Nix profile once:
 
 ```sh
-nix profile install 'github:nix-purifiers/npm-purifier#npm' 'github:nix-purifiers/npm-purifier#npm-purifier'
+nix profile install 'github:nix-purifiers/npm-purifier#npm' \
+  'github:nix-purifiers/npm-purifier#npm-purifier'
 ```
 
 This installs the `npm` wrapper. Use it for the locked
@@ -106,7 +107,8 @@ another one:
   inputs.npm-purifier.url = "github:nix-purifiers/npm-purifier";
   inputs.nixpkgs.follows = "npm-purifier/nixpkgs";
 
-  outputs = { nixpkgs, npm-purifier, ... }:
+  outputs =
+    { nixpkgs, npm-purifier, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -129,7 +131,8 @@ A package in a package set that has the overlay applied takes the scope by
 name:
 
 ```nix
-{ npm-purifier }: (npm-purifier.buildNpmProject { src = ./.; }).packages.my-app
+{ npm-purifier }:
+(npm-purifier.buildNpmProject { src = ./.; }).packages.my-app
 ```
 
 `npm-purifier.buildNpmProject.override` replaces the packages the builder
@@ -148,15 +151,15 @@ For an ad hoc build, the builder can also be evaluated directly from the
 project root. Replace the example package name with one from your project:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.npm-purifier.buildNpmProject { src = ./.; }).packages.my-app'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.npm-purifier.buildNpmProject { src = ./.; })
+.packages.my-app'
 ```
 
 This uses the purifier's pinned nixpkgs, matching the lock command above.
@@ -318,19 +321,18 @@ commander.js has no git dependencies, so the lock run writes no
 and runs its tests in the sandbox, with no Nix file added to the checkout:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-    project = pkgs.npm-purifier.buildNpmProject {
-      src = ./.;
-      doCheck = true;
-    };
-  in
-  project.packages.commander'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+  project = pkgs.npm-purifier.buildNpmProject {
+    src = ./.;
+    doCheck = true;
+  };
+in
+project.packages.commander'
 ```
 
 ### Building http-server without changing it
@@ -352,18 +354,17 @@ integrities in `../http-server.lock.json`. From the checkout, this builds
 the server with that lockfile:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.npm-purifier.buildNpmProject {
-    src = ./.;
-    lockFile = ../http-server.lock.json;
-  }).packages.http-server'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/npm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.npm-purifier.buildNpmProject {
+  src = ./.;
+  lockFile = ../http-server.lock.json;
+}).packages.http-server'
 ```
 
 A flake of your own can do the same with http-server as an input that has
