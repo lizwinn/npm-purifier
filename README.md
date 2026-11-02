@@ -374,12 +374,9 @@ A flake of your own can do the same with http-server as an input that has
 
 ## Credits
 
-npm-purifier follows the design of
-[sbt-purifier](https://github.com/nix-purifiers/sbt-purifier): the build
-tool keeps planning the build, its lockfile names every download, and Nix
-builds from the lockfile with no generated Nix files. The idea of a
-purifier was inspired by nixcloud's
-[cargo (libnix)](https://github.com/nixcloud/cargo). The Node.js of
-nixpkgs carries the patch to pacote, npm's fetcher, that prepares git
-dependencies inside the sandbox, and nixpkgs' `importNpmLock` also fetches
-each package of a `package-lock.json` separately.
+The purifier idea was inspired by nixcloud's
+[cargo (libnix)](https://github.com/nixcloud/cargo).
+
+The Node.js of nixpkgs carries the patch to pacote, npm's fetcher, that
+prepares git dependencies inside the sandbox. nixpkgs' `importNpmLock`
+also fetches each package of a `package-lock.json` separately.
