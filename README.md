@@ -5,33 +5,14 @@ Nix-resolved dependencies. Use the normal build and test commands in your
 working tree; building the project itself in the Nix sandbox is an
 optional next step.
 
-## Installation
-
-Install the integration into your Nix profile once:
-
-```sh
-nix profile install 'github:nix-purifiers/npm-purifier#npm' \
-  'github:nix-purifiers/npm-purifier#npm-purifier'
-```
-
-This installs the `npm` wrapper. Use it for the locked
-development workflow below. The native lockfile can supply the complete
-download record; a separate purifier lock is needed for the cases described
-below. With no usable lockfile, the wrapper warns on standard error and
-runs the ordinary tool with impure resolution.
-
-`nix shell` makes an integration available temporarily instead of installing
-it. Keep using the activation steps below where a project environment or
-prefetched cache is required.
-
 ## Quickstart
 
-Install Nix, then run the following from your existing project's root.
-The setup prepares the locked dependencies and the integration that
-npm's normal commands use:
+From the project root:
 
 ```zsh
-nix develop github:nix-purifiers/npm-purifier
+nix shell \
+  'github:nix-purifiers/npm-purifier#npm' \
+  'github:nix-purifiers/npm-purifier#npm-purifier'
 npm-purifier lock
 npm ci
 npm run build
@@ -46,6 +27,15 @@ No project Nix files are needed for this workflow.
 
 Sandboxed builds of the whole project are an optional
 [next step](#building-the-project-with-nix).
+
+The shell provides the `npm` wrapper. Use it for the locked
+development workflow. The native lockfile can supply the complete
+download record; a separate purifier lock is needed for the cases described
+below. With no usable lockfile, the wrapper warns on standard error and
+runs the ordinary tool with impure resolution.
+
+For persistent use, add these packages through your usual Nix configuration.
+
 
 ## Development loop
 
