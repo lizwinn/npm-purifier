@@ -92,7 +92,8 @@ another one:
 
 ```nix
 {
-  inputs.npm-purifier.url = "github:nix-purifiers/npm-purifier";
+  inputs.npm-purifier.url =
+    "github:nix-purifiers/npm-purifier";
   inputs.nixpkgs.follows = "npm-purifier/nixpkgs";
 
   outputs =
@@ -103,7 +104,9 @@ another one:
         inherit system;
         overlays = [ npm-purifier.overlays.default ];
       };
-      project = pkgs.npm-purifier.buildNpmProject { src = ./.; };
+      project = pkgs.npm-purifier.buildNpmProject {
+        src = ./.;
+      };
     in
     {
       packages.${system} = {
@@ -120,7 +123,8 @@ name:
 
 ```nix
 { npm-purifier }:
-(npm-purifier.buildNpmProject { src = ./.; }).packages.my-app
+(npm-purifier.buildNpmProject { src = ./.; })
+.packages.my-app
 ```
 
 `npm-purifier.buildNpmProject.override` replaces the packages the builder
