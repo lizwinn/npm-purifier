@@ -48,6 +48,30 @@ with tempfile.TemporaryDirectory(prefix='npm-native-composition-') as temporary:
     installed = build('packages.composed-consumer')
     output=subprocess.check_output([str(installed/'bin/composed-consumer'),'42'],text=True)
     assert 'hello, number 42' in output and 'esbuild:' in output, output
+    external=temporary/'external'
+    external.mkdir()
+    native_manifest={**manifest,'name':'external-composed','bin':{'external-composed':'index.js'}}
+    (external/'package.json').write_text(json.dumps(native_manifest))
+    (external/'index.js').write_bytes((project/'index.js').read_bytes())
+    native_lock={'name':'external-composed','version':'1.0.0','lockfileVersion':3,'packages':{
+        '':native_manifest,
+        'node_modules/greet-cli':{'version':'99.0.0','resolved':'https://invalid.example/greet-99.tgz',
+                                 'integrity':'sha512-'+__import__('base64').b64encode(bytes(64)).decode()}}}
+    (external/'package-lock.json').write_text(json.dumps(native_lock))
+    external_before=(external/'package-lock.json').read_bytes()
+    external_expression='''let
+      f=builtins.getFlake ("path:"+builtins.getEnv "NPM_COMPOSITION_FLAKE");
+      p=import f.inputs.nixpkgs {overlays=[f.overlays.default];};
+      project=p.npm-purifier.buildNpmProject {
+        src=/. + builtins.getEnv "NPM_EXTERNAL_PROJECT";
+        dependencies=[f.checks.${builtins.currentSystem}.composition-producer];
+      };
+    in assert project.fetches == []; project.packages.external-composed'''
+    external_env=dict(build_env,NPM_EXTERNAL_PROJECT=str(external))
+    external_output=Path(subprocess.check_output(['nix','build','--impure','--expr',external_expression,
+        '--out-link',str(temporary/'external-output'),'--print-out-paths'],env=external_env,text=True).strip())
+    assert 'hello, number 42' in subprocess.check_output([str(external_output/'bin/external-composed'),'42'],text=True)
+    assert (external/'package-lock.json').read_bytes()==external_before
     projected = build('projections.npm')
     metadata = json.loads(subprocess.check_output(['nix','eval','--impure','--json','--expr','('+expression+').projections.npm.catalog'],env=build_env,text=True))
     catalog = json.loads(Path(metadata).read_text())

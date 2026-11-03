@@ -46,6 +46,22 @@ try:
             before=(root/'package.json').read_bytes()
             subprocess.run([str(node/'npm'),'install','--no-audit','--no-fund'],cwd=root,env=env,check=True)
             assert (root/'package.json').read_bytes()==before
+            (root/'package.json').write_text(json.dumps({'name':'url-consumer','private':True,'dependencies':{'greet-cli':'https://invalid.example/greet-99.tgz'}}))
+            (root/'package-lock.json').unlink()
+            shutil.rmtree(root/'node_modules')
+            shutil.rmtree(root/'cache')
+            subprocess.run([str(node/'npm'),'install','--no-audit','--no-fund'],cwd=root,env=env,check=True)
+            assert json.loads((root/'package.json').read_text())['dependencies']['greet-cli']=='https://invalid.example/greet-99.tgz'
+            # An external build may keep the original native lock, whose
+            # provided subtree differs from the Nix producer's current graph.
+            native_lock=json.loads((root/'package-lock.json').read_text())
+            native_lock['packages']={key:value for key,value in native_lock['packages'].items() if key in ('','node_modules/greet-cli')}
+            (root/'package-lock.json').write_text(json.dumps(native_lock))
+            original_native=(root/'package-lock.json').read_bytes()
+            shutil.rmtree(root/'node_modules')
+            shutil.rmtree(root/'cache')
+            subprocess.run([str(node/'npm'),'ci','--no-audit','--no-fund'],cwd=root,env=env,check=True)
+            assert (root/'package-lock.json').read_bytes()==original_native
             lock=json.loads((root/'package-lock.json').read_text())
             for item in lock['packages'].values():
                 if 'resolved' in item:

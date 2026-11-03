@@ -116,23 +116,16 @@
   srcFilter ? null,
 }:
 let
-  selectedInputs = lib.purifier.projectInputs {
-    inherit dependencies;
-    formats = [ "npm" ];
-  };
-  inputViews = writeText "npm-input-views.json" (
-    builtins.toJSON (
-      map (input: {
-        repository = toString input.repository;
-        catalog = input.repository.catalog;
-      }) selectedInputs
-    )
-  );
+  inputSelection = lib.purifier.npmInputSelection { inherit dependencies; };
+  selectedInputs = inputSelection.inputs;
+  inputViews = writeText "npm-input-views.json" (builtins.toJSON inputSelection.views);
 
   # The lock in memory, which fails evaluation with the problems of the
   # lockfiles.
   lock = lib.purifier.checkLock (
     lib.npm-purifier.readLock {
+      providedNames = inputSelection.names;
+      providedVersions = inputSelection.versions;
       inherit
         src
         projectDir

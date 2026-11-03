@@ -55,6 +55,8 @@
 {
   # The source tree. It holds the project.
   src,
+  providedNames ? [ ],
+  providedVersions ? [ ],
   # The directory of the project inside `src`.
   projectDir ? "",
   # npm's lockfile. An external build can keep its own copy outside the
@@ -187,6 +189,15 @@ let
     lib.filterAttrs (
       key: entry:
       isInstalled key
+      && !(
+        let
+          name = entry.name or (lib.last (lib.splitString "node_modules/" key));
+        in
+        builtins.elem name providedNames
+        || builtins.any (
+          item: item.name == name && item.version == (entry.version or null)
+        ) providedVersions
+      )
       && !(entry.link or false)
       && !(entry.inBundle or false)
       && !lib.hasPrefix "file:" (entry.resolved or "")

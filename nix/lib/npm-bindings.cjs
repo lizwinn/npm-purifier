@@ -45,12 +45,23 @@ function activate (configuration, modules) {
     let spec
     try { spec = typeof requested === 'string' ? npa.resolve(child.name, requested) : requested } catch {}
     if (spec?.type === 'alias') spec = spec.subSpec
-    if (spec && ['range', 'version', 'tag'].includes(spec.type)) {
+    if (spec && ['range', 'version', 'tag', 'git', 'remote', 'file'].includes(spec.type)) {
       const entry = select(spec.name, spec.fetchSpec)
-      if (entry && child.version === entry.version && child.resolved === entry.resolved) return true
+      if (entry && child.version === entry.version && [entry.resolved, entry.archive, 'file:'+entry.archive].includes(child.resolved)) return true
     }
     return valid(child, requested, accept, requestor)
   }
+  // Supplied runtime nodes are locked by Nix, including nodes absent from
+  // the native lock. Keep npm's ordinary checks for every other artifact.
+  const validatePath = require.resolve(path.join(modules, '../lib/utils/validate-lockfile.js'))
+  const validate = require(validatePath)
+  require.cache[validatePath].exports = (virtual, ideal) => validate(virtual, new Map(
+    [...ideal].filter(([, node]) => {
+      const name = node.package?.name || node.name
+      const entry = byName.get(name)?.get(node.version)
+      return !entry || ![entry.resolved, entry.archive, 'file:'+entry.archive].includes(node.resolved)
+    })
+  ))
   const trusted = new WeakMap()
   const pickPath = require.resolve('npm-pick-manifest', { paths: [modules] })
   const pick = require(pickPath)
@@ -59,7 +70,19 @@ function activate (configuration, modules) {
     const entry = versions && select(packument.name, wanted)
     return pick(packument, entry ? entry.version : wanted, options)
   }
-  // Initialize pacote through its public entry to complete its internal cycles.
+  // Complete fetcher cycles, then patch before the public API captures get.
+  const Fetcher = load('pacote/lib/fetcher.js')
+  const File = load('pacote/lib/file.js')
+  const getFetcher = Fetcher.get
+  Fetcher.get = function (requested, options = {}) {
+    const spec = typeof requested === 'string' ? npa(requested, options.where) : requested
+    const entry = spec && ['git','remote','file'].includes(spec.type) && select(spec.name, spec.fetchSpec)
+    if (!entry) return getFetcher.call(this, requested, options)
+    const fetcher = new File(entry.resolved, {...options, integrity:entry.integrity, preferOnline:true})
+    const manifest = fetcher.manifest.bind(fetcher)
+    fetcher.manifest = async () => ({...await manifest(), _resolved:entry.resolved})
+    return fetcher
+  }
   load('pacote')
   const Shrinkwrap = load('@npmcli/arborist/lib/shrinkwrap.js')
   const readLock = Shrinkwrap.prototype.load
@@ -82,7 +105,6 @@ function activate (configuration, modules) {
     return result
   }
   const Registry = load('pacote/lib/registry.js')
-  const File = load('pacote/lib/file.js')
   const symbols = load('pacote/lib/util/protected.js')
   const packument = Registry.prototype.packument
   Registry.prototype.packument = async function () {
