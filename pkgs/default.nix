@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 { callPackage, lib, ... }:
 let
-  npm-purifier = callPackage ./npm-purifier { };
+  npm-purifier = callPackage ./npm-purifier { inherit (lib) purifier; };
 in
 {
   # The builder of npm projects (nix/lib/build-npm-project.nix), a package

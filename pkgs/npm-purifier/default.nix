@@ -29,6 +29,7 @@
 # and library as a Nix build of the project does.
 {
   lib,
+  purifier,
   writeShellApplication,
   nodejs,
   python3,
@@ -191,7 +192,7 @@ writeShellApplication {
     if [ "$command" = lock ] || [ "$command" = update ] || [ "$command" = inputs ] || [ "$command" = prefetch ]; then
       refreshArgs=()
       if [ "$command" = update ]; then refreshArgs=(--refresh); fi
-      python ${../../nix/lib/npm-inputs.py} ${lib.purifier.projectInputsTool} \
+      python ${../../nix/lib/npm-inputs.py} ${purifier.projectInputsTool} \
         "$lockfile" "$state" ${../../nix/lib/npm-bindings.cjs} \
         ${nodejs}/lib/node_modules/npm/node_modules "''${inputArgs[@]}" "''${refreshArgs[@]}"
       # shellcheck disable=SC1091

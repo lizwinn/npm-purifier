@@ -66,7 +66,9 @@ with tempfile.TemporaryDirectory(prefix='npm-native-composition-') as temporary:
         src=/. + builtins.getEnv "NPM_EXTERNAL_PROJECT";
         dependencies=[f.checks.${builtins.currentSystem}.composition-producer];
       };
-    in assert project.fetches == []; project.packages.external-composed'''
+    in assert p.npm-purifier.npm-purifier.drvPath != "";
+       assert p.npm-purifier.npm.drvPath != "";
+       assert project.fetches == []; project.packages.external-composed'''
     external_env=dict(build_env,NPM_EXTERNAL_PROJECT=str(external))
     external_output=Path(subprocess.check_output(['nix','build','--impure','--expr',external_expression,
         '--out-link',str(temporary/'external-output'),'--print-out-paths'],env=external_env,text=True).strip())
