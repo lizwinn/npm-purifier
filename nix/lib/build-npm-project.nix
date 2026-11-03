@@ -349,7 +349,7 @@ let
       '') ownPackages}
       export NPM_PURIFIER_NPM_MODULES=${node}/lib/node_modules/npm/node_modules
       export NPM_PROJECTION_NIX=${nix}/bin/nix
-      node ${./capture-projection.cjs} "$PWD" "$out" "$graph" \
+      node ${lib.purifier.npmCaptureTool} "$PWD" "$out" "$graph" \
         ${writeText "npm-projection-packages.json" (builtins.toJSON ownPackages)}
       runHook postInstall
     '';

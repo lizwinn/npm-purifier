@@ -55,12 +55,26 @@ with tempfile.TemporaryDirectory(prefix='npm-native-composition-') as temporary:
     import base64
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    uploads = {}
+    provided=next(entry for entry in catalog['modules'] if entry['name']=='greet-cli')
+    uploads = {provided['name']:(projected/provided['archive']).read_bytes()}
+    put_names=[]
     class Registry(BaseHTTPRequestHandler):
         def do_GET(self):
-            self.send_error(404)
+            from urllib.parse import unquote, urlsplit
+            name=unquote(urlsplit(self.path).path).lstrip('/')
+            available=[entry for entry in catalog['modules'] if entry['name']==name and name in uploads]
+            if not available:
+                self.send_error(404)
+                return
+            versions={entry['version']:{**entry['package'],'dist':{'integrity':entry['integrity'],'tarball':'http://'+self.headers['Host']+'/'+entry['archive']}} for entry in available}
+            body=json.dumps({'name':name,'versions':versions,'dist-tags':{'latest':available[0]['version']}}).encode()
+            self.send_response(200)
+            self.send_header('Content-Length',str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         def do_PUT(self):
             document=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            put_names.append(document['name'])
             for attachment in document['_attachments'].values():
                 data=base64.b64decode(attachment['data'])
                 uploads[document['name']]=data
@@ -78,6 +92,7 @@ with tempfile.TemporaryDirectory(prefix='npm-native-composition-') as temporary:
     finally:
         server.shutdown()
         server.server_close()
+    assert provided['name'] not in put_names, 'an already published dependency was uploaded again'
     for entry in catalog['modules']:
         assert uploads[entry['name']]==(projected/entry['archive']).read_bytes(), entry['name']
     assert before==(lockfile.read_bytes(),(project/'package-lock.json').read_bytes())
