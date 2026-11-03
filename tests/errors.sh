@@ -52,7 +52,14 @@ purifierLock() {
   printf '{\n  "version": %s,\n  "hash": "",\n  "packageLockSha256": "%s",\n  "git": {}\n}\n' "$2" "$3" > "$file"
   local hash
   hash="$(nix hash file --type sha256 --sri "$file")"
-  sed -i "s|\"hash\": \"\"|\"hash\": \"$hash\"|" "$file"
+  edit "s|\"hash\": \"\"|\"hash\": \"$hash\"|" "$file"
+}
+
+# edit <sed script> <file>: edits the file in place, through a copy, as
+# macOS's sed takes the word after `-i` for a backup suffix.
+edit() {
+  sed "$1" "$2" > "$2.new"
+  mv "$2.new" "$2"
 }
 
 gitLock="{\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"p\"},\"node_modules/a\":{\"resolved\":\"git+ssh://git@github.com/o/a.git#$sha\"}}}"
@@ -75,7 +82,7 @@ expect missing-entry 'has no entry for'
 # npm-purifier.lock.json changed by hand after the lock run wrote it.
 lockfile tampered <<< "$gitLock"
 purifierLock tampered 3 "$(sha256sum "$work/tampered/package-lock.json" | cut -d' ' -f1)"
-sed -i 's|"git": {}|"git": {"x": {}}|' "$work/tampered/npm-purifier.lock.json"
+edit 's|"git": {}|"git": {"x": {}}|' "$work/tampered/npm-purifier.lock.json"
 expect tampered 'was changed after `npm-purifier lock` wrote it'
 
 # npm-purifier.lock.json of an older format.

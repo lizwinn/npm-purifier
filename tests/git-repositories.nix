@@ -61,8 +61,9 @@ let
     git add package.json build.js .gitmodules
     git commit -q -m "Add the package"
     # The submodule checked out, as fetchgit leaves a repository it fetches
-    # with its submodules.
-    git clone -q ${sub} vendor/sub
+    # with its submodules. The clone copies the objects: hard links to the
+    # store's files would put files of the store's owner in this output.
+    git clone -q --no-hardlinks ${sub} vendor/sub
   '';
 in
 {

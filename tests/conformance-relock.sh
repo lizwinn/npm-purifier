@@ -26,8 +26,12 @@ purifier="$work/command/bin/npm-purifier"
 relock() {
   local fixture="$root/tests/fixtures/$1" copy="$work/$1"
   mkdir -p "$copy"
-  # The fixture's own files, without what an editor or agent left there.
-  (cd "$fixture" && find . -type f -not -path './.claude/*' -exec cp --parents {} "$copy" \;)
+  # The fixture's own files, without what an editor or agent left there,
+  # one by one, as macOS's cp has no --parents.
+  (cd "$fixture" && find . -type f -not -path './.claude/*') | while IFS= read -r file; do
+    mkdir -p "$copy/${file%/*}"
+    cp "$fixture/$file" "$copy/$file"
+  done
   chmod -R u+w "$copy"
   (cd "$copy" && "$purifier" lock)
   diff -u "$fixture/package-lock.json" "$copy/package-lock.json"

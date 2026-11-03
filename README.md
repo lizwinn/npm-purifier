@@ -297,7 +297,7 @@ npm-purifier refuses these:
   `git+<url>#<commit>` form.
 - Native lockfile versions 1, 2 and 3 are read without upgrading the project. Version 1 records nested dependencies; the reader normalizes them in memory.
 
-npm-purifier builds for x86_64-linux and aarch64-linux.
+npm-purifier builds for x86_64-linux, aarch64-linux and aarch64-darwin.
 
 `npm-purifier.lock.json` holds only what `package-lock.json` cannot
 supply. Per git dependency, keyed by its `resolved`, it holds the Nix hash

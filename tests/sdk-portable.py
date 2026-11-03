@@ -21,7 +21,8 @@ reference = data['stringReference']
 roundtrip = output(data['runtimeShell'], '-c', 'value="' + reference['shell'] + '"; printf "%s" "$value"')
 assert roundtrip == reference['expression'], 'SDK shell serialization changed the Nix expression'
 with tempfile.TemporaryDirectory(prefix='sdk-runtime-copy-') as temporary:
-    root = Path(temporary)
+    # Nix refuses a store under a symlink, such as macOS's /var.
+    root = Path(temporary).resolve()
     cache = 'file://' + str(root / 'cache')
     cold = 'local?root=' + str(root / 'cold')
     subprocess.run(['nix', 'copy', '--to', cache, carrier], check=True)
