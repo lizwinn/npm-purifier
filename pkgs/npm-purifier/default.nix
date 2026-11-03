@@ -31,6 +31,7 @@
   lib,
   writeShellApplication,
   nodejs,
+  python3,
   coreutils,
   git,
   nix-prefetch-git,
@@ -41,6 +42,7 @@ writeShellApplication {
   runtimeInputs = [
     coreutils
     nodejs
+    python3
     git
     nix-prefetch-git
   ];
@@ -65,9 +67,19 @@ writeShellApplication {
     if [ -n "''${NPM_PURIFIER_TOOL_LOCKFILE:-}" ]; then
       toolLockfile="$(realpath -m "$NPM_PURIFIER_TOOL_LOCKFILE")"
     fi
+    inputArgs=()
     rest=()
     while [ "$#" -gt 0 ]; do
       case "$1" in
+        --input)
+          [ "$#" -ge 2 ] || usage
+          inputArgs+=(--input "$2")
+          shift 2
+          ;;
+        --input=*)
+          inputArgs+=(--input "''${1#--input=}")
+          shift
+          ;;
         --lockfile)
           [ "$#" -ge 2 ] || usage
           lockfile="$(realpath -m "$2")"
@@ -176,7 +188,19 @@ writeShellApplication {
       checkJson "$lockfile" "run \`npm-purifier lock\` to write it again"
     }
 
+    if [ "$command" = lock ] || [ "$command" = update ] || [ "$command" = inputs ] || [ "$command" = prefetch ]; then
+      refreshArgs=()
+      if [ "$command" = update ]; then refreshArgs=(--refresh); fi
+      python ${../../nix/lib/npm-inputs.py} ${lib.purifier.projectInputsTool} \
+        "$lockfile" "$state" ${../../nix/lib/npm-bindings.cjs} \
+        ${nodejs}/lib/node_modules/npm/node_modules "''${inputArgs[@]}" "''${refreshArgs[@]}"
+      # shellcheck disable=SC1091
+      source "$state/input-environment"
+    fi
     case "$command" in
+      inputs)
+        exit
+        ;;
       lock)
         withToolLockfile env \
           NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
@@ -220,6 +244,12 @@ writeShellApplication {
         checkLockfiles
         name="$(node -p 'require("./package.json").name')"
         echo "npm-purifier: building $name" >&2
+        if node -e 'const fs=require("fs");const p=process.argv[1];process.exit(fs.existsSync(p) && (JSON.parse(fs.readFileSync(p)).projectInputs || []).length ? 0 : 1)' "$lockfile"; then
+          projection="$project.packages.\''${builtins.getEnv \"NPM_PURIFIER_PACKAGE\"}.projections.npm"
+          repository="$(NPM_PURIFIER_PACKAGE="$name" nix build --impure --no-link --print-out-paths --expr "$projection")"
+          catalog="$(NPM_PURIFIER_PACKAGE="$name" nix eval --impure --raw --expr "$projection.catalog")"
+          exec node ${../../nix/lib/npm-publish.cjs} "$npm" "$repository" "$catalog" "''${rest[@]}"
+        fi
         tarball="$(
           NPM_PURIFIER_PACKAGE="$name" nix build --impure --no-link --print-out-paths --expr "
             $project.packages.\''${builtins.getEnv \"NPM_PURIFIER_PACKAGE\"}.tarball

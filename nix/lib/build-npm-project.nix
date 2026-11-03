@@ -55,6 +55,7 @@
   git,
   nodejs,
   python3,
+  nix,
 }:
 {
   # The source tree. It holds the project and every local directory the
@@ -63,6 +64,12 @@
   # Fetchers that replace those of the purifier library (fetchurl,
   # fetchgit), such as a fetchurl that sends credentials or reads a mirror.
   fetchers ? { },
+  # Native repositories supplied by other purified Nix projects.
+  dependencies ? lib.purifier.lockedProjectInputs {
+    inputs =
+      if builtins.pathExists lockFile then (lib.importJSON lockFile).projectInputs or [ ] else [ ];
+    system = stdenv.hostPlatform.system;
+  },
   # The directory of the project inside `src`, where package.json and
   # package-lock.json lie. The default is the root of `src`.
   projectDir ? "",
@@ -109,6 +116,19 @@
   srcFilter ? null,
 }:
 let
+  selectedInputs = lib.purifier.projectInputs {
+    inherit dependencies;
+    formats = [ "npm" ];
+  };
+  inputViews = writeText "npm-input-views.json" (
+    builtins.toJSON (
+      map (input: {
+        repository = toString input.repository;
+        catalog = input.repository.catalog;
+      }) selectedInputs
+    )
+  );
+
   # The lock in memory, which fails evaluation with the problems of the
   # lockfiles.
   lock = lib.purifier.checkLock (
@@ -164,7 +184,17 @@ let
     let
       name = baseNameOf path;
     in
-    !((type == "directory" && name == "node_modules") || name == ".git" || lib.hasPrefix "result" name);
+    !(
+      (
+        type == "directory"
+        && builtins.elem name [
+          "node_modules"
+          ".npm-purifier"
+        ]
+      )
+      || name == ".git"
+      || lib.hasPrefix "result" name
+    );
 
   filteredSrc = builtins.path {
     path = src;
@@ -212,6 +242,11 @@ let
     # downloading them. node-gyp reads this variable itself; npm warns
     # that it is not one of npm's own settings.
     export npm_config_nodedir=${node}
+    ${lib.optionalString (dependencies != [ ]) ''
+      export NPM_PURIFIER_INPUT_VIEWS=${inputViews}
+      export NPM_PURIFIER_NPM_MODULES=${node}/lib/node_modules/npm/node_modules
+      export NODE_OPTIONS="--require=${./npm-bindings.cjs} ''${NODE_OPTIONS:-}"
+    ''}
     mkdir -p "$HOME" "$npm_config_cache/_cacache"
     cp -rs --no-preserve=mode ${cache.tree}/. "$npm_config_cache/_cacache"
     ${cache.environment}
@@ -279,9 +314,14 @@ let
   inputs = [ node ] ++ lib.optional cache.needsGit git ++ nativeBuildInputs;
 
   release = stdenv.mkDerivation {
+    outputs = [
+      "out"
+      "graph"
+    ];
     name = "npm-project-release";
+    passthru = { inherit projections; };
     src = filteredSrc;
-    nativeBuildInputs = inputs;
+    nativeBuildInputs = inputs ++ [ nix ];
     inherit buildInputs;
     dontConfigure = true;
     buildPhase = ''
@@ -307,6 +347,10 @@ let
         } > /dev/null
         mv "$packdir"/*.tgz "$out"/${lib.escapeShellArg (tarballName p)}
       '') ownPackages}
+      export NPM_PURIFIER_NPM_MODULES=${node}/lib/node_modules/npm/node_modules
+      export NPM_PROJECTION_NIX=${nix}/bin/nix
+      node ${./capture-projection.cjs} "$PWD" "$out" "$graph" \
+        ${writeText "npm-projection-packages.json" (builtins.toJSON ownPackages)}
       runHook postInstall
     '';
     # The tarballs are what npm publishes, byte for byte.
@@ -432,14 +476,34 @@ let
       '';
       passthru = {
         inherit (p) name dir;
+        projections = projectionFor [ p.name ];
       };
       meta = lib.optionalAttrs (p.bin != { }) {
         mainProgram = builtins.head (builtins.attrNames p.bin);
       };
     };
+  projectionFor =
+    roots:
+    lib.purifier.npmProjections {
+      graph = "${release.graph}/graph.json";
+      archives = "${release.graph}/archives";
+      producer = release;
+      inherit
+        roots
+        runCommand
+        python3
+        dependencies
+        ;
+    };
+  projections = projectionFor null;
 in
 {
-  inherit release tests productionModules;
+  inherit
+    release
+    tests
+    productionModules
+    projections
+    ;
   fetches = lock.entries;
   cache = cache.tree;
   packages = lib.mapAttrs (_: mkPackage) lock.outputs;
@@ -461,5 +525,21 @@ in
         mkdir -p "$out"
         ln -s ${cache.tree} "$out/cache"
         cp "$environmentPath" "$out/environment"
+        ${lib.optionalString (dependencies != [ ]) ''
+          cat >> "$out/environment" <<'NPM_INPUT_ENV'
+          export NPM_PURIFIER_INPUT_VIEWS=${inputViews}
+          export NPM_PURIFIER_NPM_MODULES=${node}/lib/node_modules/npm/node_modules
+          export NODE_OPTIONS="--require=${./npm-bindings.cjs} ''${NODE_OPTIONS:-}"
+          NPM_INPUT_ENV
+          mkdir -p "$out/nix-support"
+          printf '%s\n' ${
+            lib.escapeShellArgs (
+              lib.concatMap (input: [
+                (toString input.producer)
+                (toString input.repository)
+              ]) selectedInputs
+            )
+          } > "$out/nix-support/inputs"
+        ''}
       '';
 }

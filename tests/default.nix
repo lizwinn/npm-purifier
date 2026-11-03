@@ -116,6 +116,24 @@ let
       throw "npm-purifier check ${name}: ${message}";
 in
 {
+  composition-producer = workspaces.packages.greet-cli;
+  npm-projection =
+    pkgs.runCommand "npm-projection-check"
+      {
+        nativeBuildInputs = [
+          pkgs.nodejs
+          pkgs.python3
+        ];
+      }
+      ''
+          export HOME="$TMPDIR/home"
+          mkdir -p "$HOME"
+          python ${./npm-projection.py} ${workspaces.projections.npm} \
+            ${workspaces.projections.npm.catalog} ${pkgs.nodejs}/bin \
+        ${../nix/lib/npm-bindings.cjs}
+          touch "$out"
+      '';
+
   # The package's command prints what its build script wrote, and its
   # dev dependency stays out of the installed package.
   app =

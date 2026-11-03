@@ -384,7 +384,9 @@ const main = (root, purifierLockPath) => {
     }
     if (git[resolved].packageLock) queue.push(...gitDependencies(git[resolved].packageLock));
   }
-  if (Object.keys(git).length === 0 && Object.keys(completions).length === 0) {
+  const projectInputs = process.env.NPM_PURIFIER_INPUT_PINS
+    ? readJson(process.env.NPM_PURIFIER_INPUT_PINS) : [];
+  if (Object.keys(git).length === 0 && Object.keys(completions).length === 0 && projectInputs.length === 0) {
     fs.rmSync(purifierLockPath, { force: true });
     process.stderr.write("npm-purifier: package-lock.json records every download; no npm-purifier.lock.json needed\n");
     return;
@@ -395,6 +397,7 @@ const main = (root, purifierLockPath) => {
     hash: "",
     packageLockSha256: crypto.createHash("sha256").update(packageLockText).digest("hex"),
     git: sorted,
+    ...(projectInputs.length > 0 ? { projectInputs } : {}),
     ...(Object.keys(completions).length > 0 ? { completions } : {}),
   };
   fs.writeFileSync(purifierLockPath, withHash(JSON.stringify(lock, null, 2) + "\n"));

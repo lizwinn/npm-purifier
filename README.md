@@ -70,6 +70,28 @@ Nix and runs `npm publish` on that tarball. Further arguments go to
 `npm publish`, so `npm-purifier publish --dry-run` shows what would be
 uploaded. Nothing is packed outside the sandbox.
 
+## Dependencies from another purified project
+
+Supply a Nix-built package that exports an npm repository:
+
+```sh
+npm-purifier lock \
+  --input 'github:example/library#library'
+npm ci
+```
+
+The purifier pins the producer's Nix source identity. Supplied packages
+come from its repository, without duplicate download entries. Their Nix
+identities take precedence over ordinary version constraints; your
+`package.json` stays unchanged. `npm-purifier update` refreshes the inputs.
+
+A Nix build can pass producer packages through `dependencies`. Its outputs
+expose `projections.npm`, with exact dependency metadata for ordinary npm
+consumers. Prepared native dependencies are included for the target platform.
+With composed inputs, `npm-purifier publish` publishes those repository
+archives using npm's authentication and options, under the `nix` tag unless
+you specify another tag.
+
 ## Building the project with Nix
 
 Once the native development workflow is working, you can also build and

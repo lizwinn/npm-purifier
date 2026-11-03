@@ -70,10 +70,15 @@ writeShellApplication {
       esac
     done
 
+    state="$root/.npm-purifier"
+    (cd "$root" && "$purifier" inputs "''${lockfileArgs[@]}")
+
     case "$command" in
       install | i | in | ins | inst | insta | instal | isnt | isnta | isntal | isntall | add | \
         update | up | upgrade | udpate | \
         uninstall | unlink | remove | rm | r | un)
+        # shellcheck disable=SC1091
+        source "$state/input-environment"
         "$npm" "$@"
         "$purifier" lock "''${lockfileArgs[@]}"
         exit
