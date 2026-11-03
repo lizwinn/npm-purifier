@@ -30,6 +30,9 @@ with tempfile.TemporaryDirectory(prefix='npm-native-composition-') as temporary:
     lock = json.loads(lockfile.read_text())
     assert len(lock['projectInputs'])==1 and not lock['git']
     before = lockfile.read_bytes(), (project/'package-lock.json').read_bytes()
+    saved_native = json.loads(before[1])
+    assert list(saved_native['packages']) == [''], saved_native
+    assert b'/nix/store/' not in before[1] and b'-nix-' not in before[1]
     run(cli,'lock')
     assert before==(lockfile.read_bytes(),(project/'package-lock.json').read_bytes())
     assert (project/'package.json').read_bytes()==original
