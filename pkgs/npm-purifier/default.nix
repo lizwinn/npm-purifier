@@ -32,6 +32,8 @@
   purifier,
   writeShellApplication,
   nodejs,
+  pkgs,
+  hostNode ? pkgs.nodejs,
   python3,
   coreutils,
   git,
@@ -125,6 +127,7 @@ writeShellApplication {
       in
       import $flake/nix/lib/project.nix {
         inherit (f) lib;
+        node = builtins.storePath \"${nodejs}\";
         pkgs = import f.inputs.nixpkgs {
           system = \"$system\";
           overlays = [ f.overlays.default ];
@@ -204,16 +207,16 @@ writeShellApplication {
         ;;
       lock)
         withToolLockfile env \
-          NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
+          NPM_PURIFIER_NPM_MODULES=${hostNode}/lib/node_modules/npm/node_modules \
           NPM_PURIFIER_NPM="$npm" \
-          node ${./lock.js} "$root" "$lockfile"
+          ${hostNode}/bin/node ${./lock.js} "$root" "$lockfile"
         ;;
       update)
         updateAndLock() {
           (cd "$root" && "$npm" update --package-lock-only --ignore-scripts --no-audit --no-fund "''${rest[@]}")
-          NPM_PURIFIER_NPM_MODULES=${nodejs}/lib/node_modules/npm/node_modules \
+          NPM_PURIFIER_NPM_MODULES=${hostNode}/lib/node_modules/npm/node_modules \
             NPM_PURIFIER_NPM="$npm" \
-            node ${./lock.js} "$root" "$lockfile"
+            ${hostNode}/bin/node ${./lock.js} "$root" "$lockfile"
         }
         withToolLockfile updateAndLock
         ;;
@@ -237,7 +240,7 @@ writeShellApplication {
         if [ -f "$lockfile" ]; then
           lockfiles+=("$lockfile")
         fi
-        stamp="$(cat "''${lockfiles[@]}" | sha256sum | cut -d' ' -f1)"
+        stamp="$( { printf '%s\n' ${nodejs} ${../..}; cat "''${lockfiles[@]}"; } | sha256sum | cut -d' ' -f1)"
         printf '%s %s\n' "$stamp" "$lockfile" > "$state/stamp"
         echo "npm-purifier: npm runs offline in $root through the npm-purifier npm wrapper" >&2
         ;;
@@ -249,7 +252,7 @@ writeShellApplication {
           projection="$project.packages.\''${builtins.getEnv \"NPM_PURIFIER_PACKAGE\"}.projections.npm"
           repository="$(NPM_PURIFIER_PACKAGE="$name" nix build --impure --no-link --print-out-paths --expr "$projection")"
           catalog="$(NPM_PURIFIER_PACKAGE="$name" nix eval --impure --raw --expr "$projection.catalog")"
-          exec node ${../../nix/lib/npm-publish.cjs} "$npm" "$repository" "$catalog" "''${rest[@]}"
+          exec ${hostNode}/bin/node ${../../nix/lib/npm-publish.cjs} "$npm" "$repository" "$catalog" "''${rest[@]}"
         fi
         tarball="$(
           NPM_PURIFIER_PACKAGE="$name" nix build --impure --no-link --print-out-paths --expr "

@@ -12,6 +12,7 @@
   # The package set to build with, with the default overlay of this flake,
   # which adds the scope `npm-purifier`.
   pkgs,
+  node ? pkgs.nodejs,
   packageLock,
   lockFile ? dirOf packageLock + "/npm-purifier.lock.json",
   # A package-lock.json kept outside the project, which the build installs
@@ -29,7 +30,7 @@ let
       leading = parts: if parts != [ ] && lib.head parts == ".." then 1 + leading (lib.tail parts) else 0;
     in
     leading (lib.splitString "/" key);
-  depth = lib.foldl' lib.max 0 (map depthOf (builtins.attrNames lock.packages));
+  depth = lib.foldl' lib.max 0 (map depthOf (builtins.attrNames (lock.packages or { })));
 
   projectRoot = dirOf packageLock;
   up = n: path: if n == 0 then path else up (n - 1) (dirOf path);
@@ -37,7 +38,7 @@ let
 in
 pkgs.npm-purifier.buildNpmProject (
   {
-    inherit lockFile;
+    inherit lockFile node;
     src = up depth projectRoot;
     projectDir = lib.concatStringsSep "/" (lib.drop (lib.length rootParts - depth) rootParts);
   }

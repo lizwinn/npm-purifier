@@ -1,0 +1,17 @@
+{
+  "name": "legacy-npm-app",
+  "version": "1.0.0",
+  "bin": {
+    "legacy-npm-app": "cli.js"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').writeFileSync('built.txt', process.version)\"",
+    "test": "node -e \"if(require('fs').readFileSync('built.txt', 'utf8') !== process.version) process.exit(1)\""
+  },
+  "dependencies": {
+    "is-number": "7.0.0"
+  },
+  "devDependencies": {
+    "is-odd": "3.0.1"
+  }
+}

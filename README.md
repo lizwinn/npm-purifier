@@ -160,6 +160,24 @@ lockfiles without building anything. It returns the downloads as
 `entries`, the packages as `outputs`, and, in `problems`, each reason the
 lockfiles cannot be used, which is the same shape every purifier returns.
 
+### Toolchain versions
+
+`buildNpmProject { src = ./.; node = projectNode; captureNode = helperNode; }`
+selects the project's Node.js and its bundled native npm independently of the
+modern graph inspector. `projectNode` and `helperNode` are caller-provided Nix
+packages; historical packages can come from a pinned package set or a separate
+package derivation. The helper reads the installed graph and does not replace
+npm's resolver. Capture records the target Node version, ABI and platform.
+
+The `legacy-node` check builds a real npm 6 / Node 12.22.12 project from its
+unchanged lockfileVersion 1 lock, including two nested dependency versions,
+project scripts, production dependencies, native tarballs and an outgoing
+projection. `tests/legacy-native.py` also exercises lock, prefetch, offline
+`npm ci`, build and test with these tools. CI runs this on both Linux
+architectures. These are exact regression cases, not minimum or maximum
+accepted versions. Incoming Nix dependency bindings still use Arborist APIs;
+that feature needs a separate npm 6 adapter before claiming it for this tuple.
+
 ### One-off builds without a project Nix file
 
 For an ad hoc build, the builder can also be evaluated directly from the
@@ -237,7 +255,7 @@ message that names the fix. `readLock` lists the same messages in
 | `was changed after npm-purifier lock wrote it` | `npm-purifier.lock.json` was edited by hand | run `npm-purifier lock` |
 | `is not of format version 3` | a file from an older npm-purifier | run `npm-purifier lock` |
 | `has no resolved URL` or `has no integrity` | an incomplete lockfile entry | run `npm-purifier lock` |
-| `run npm install with npm 7 or newer` | a lockfile of npm 6 | run `npm install` with a current npm |
+| `unsupported lockfileVersion` | a native format without a reader | select a purifier adapter for that format; keep the project lockfile |
 | `has merge conflict markers` | an unresolved merge in a lockfile | resolve it, then run `npm-purifier lock` |
 | `seems to be corrupted` (from npm) | a tarball whose content does not match its integrity | check the URL and the integrity in `package-lock.json` |
 
@@ -273,7 +291,7 @@ npm-purifier refuses these:
 - A git dependency that npm clones from a URL other than the one in its
   `resolved` stops the lock run, which asks for the dependency in the
   `git+<url>#<commit>` form.
-- A lockfile of npm 6 (`lockfileVersion` 1) stops the evaluation.
+- Native lockfile versions 1, 2 and 3 are read without upgrading the project. Version 1 records nested dependencies; the reader normalizes them in memory.
 
 npm-purifier builds for x86_64-linux and aarch64-linux.
 

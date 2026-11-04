@@ -26,6 +26,26 @@ const {
 
 const sha = "98e8ff1da1a89f93d1397a24d7413ed15421c139";
 
+test("legacy nested locks retain their format and scoped paths when completed", () => {
+  const lock = {lockfileVersion: 1, dependencies: {
+    a: {version: "1.0.0", resolved: "https://r/a.tgz", integrity: "sha512-a", dependencies: {
+      "@scope/b": {version: "2.0.0"},
+      bundled: {version: "1.0.0", bundled: true},
+      source: {version: `git+https://github.com/o/r.git#${sha}`},
+    }},
+  }};
+  assert.deepEqual(incompleteEntries(lock), ["node_modules/a/node_modules/@scope/b"]);
+  assert.deepEqual(gitDependencies(lock), [`git+https://github.com/o/r.git#${sha}`]);
+  completeLock(lock, (name, version) => {
+    assert.equal(name, "@scope/b"); assert.equal(version, "2.0.0");
+    return {tarball: "https://r/b.tgz", integrity: "sha512-b"};
+  });
+  assert.equal(lock.lockfileVersion, 1);
+  assert.equal(lock.packages, undefined);
+  assert.equal(lock.dependencies.a.dependencies["@scope/b"].resolved, "https://r/b.tgz");
+  assert.equal(lock.dependencies.a.dependencies["@scope/b"].inBundle, undefined);
+});
+
 test("gitDependencies takes the git entries and nothing else", () => {
   const lock = {
     packages: {

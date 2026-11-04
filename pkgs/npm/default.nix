@@ -96,7 +96,7 @@ writeShellApplication {
     if [ -f "$lockfile" ]; then
       lockfiles+=("$lockfile")
     fi
-    stamp="$(cat "''${lockfiles[@]}" | sha256sum | cut -d' ' -f1)"
+    stamp="$( { printf '%s\n' ${nodejs} ${../..}; cat "''${lockfiles[@]}"; } | sha256sum | cut -d' ' -f1)"
     if [ "$(cat "$state/stamp" 2> /dev/null || true)" != "$stamp $lockfile" ]; then
       (cd "$root" && "$purifier" prefetch "''${lockfileArgs[@]}")
     fi

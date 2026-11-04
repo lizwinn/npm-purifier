@@ -83,9 +83,9 @@ lockfile old-format <<< "$gitLock"
 purifierLock old-format 2 "$(sha256sum "$work/old-format/package-lock.json" | cut -d' ' -f1)"
 expect old-format 'is not of format version 3; run `npm-purifier lock`'
 
-# A lockfile from npm 6.
-lockfile old <<< '{"lockfileVersion":1,"dependencies":{}}'
-expect old 'run `npm install` with npm 7 or newer'
+# Unknown native lock formats need a version-specific reader.
+lockfile old <<< '{"lockfileVersion":99,"packages":{}}'
+expect old 'unsupported lockfileVersion 99'
 
 # A tarball without an integrity.
 lockfile no-integrity <<< '{"lockfileVersion":3,"packages":{"node_modules/a":{"resolved":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"}}}'

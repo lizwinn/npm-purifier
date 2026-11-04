@@ -45,8 +45,8 @@
 // run then writes that file, as it writes the one in a project.
 //
 // Usage: node lock.js <project root> [<npm-purifier.lock.json>]
-// The environment names npm's own modules (NPM_PURIFIER_NPM_MODULES) and
-// npm (NPM_PURIFIER_NPM).
+// The environment selects the helper's parser modules (NPM_PURIFIER_NPM_MODULES)
+// and the native npm that resolves and writes lockfiles (NPM_PURIFIER_NPM).
 
 "use strict";
 
@@ -70,11 +70,37 @@ const needsPreparation = (manifest) =>
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 
+// Normalize historical nested locks in memory; keep the native document's
+// shape and lockfileVersion when adding missing fields.
+const packageEntries = (lock) => {
+  if (lock.packages) return lock.packages;
+  const result = {};
+  const visit = (dependencies, prefix) => {
+    for (const [name, entry] of Object.entries(dependencies || {})) {
+      const key = prefix + 'node_modules/' + name;
+      result[key] = {...entry, inBundle: entry.bundled || false};
+      if (!entry.resolved && /^(file:|git\+)/.test(entry.version || '')) result[key].resolved = entry.version;
+      visit(entry.dependencies, key + '/');
+    }
+  };
+  visit(lock.dependencies, '');
+  return result;
+};
+
+const replacePackage = (lock, key, entry) => {
+  if (lock.packages) { lock.packages[key] = entry; return; }
+  const names = key.slice('node_modules/'.length).split('/node_modules/');
+  let dependencies = lock.dependencies;
+  for (const name of names.slice(0, -1)) dependencies = dependencies[name].dependencies;
+  const {inBundle, ...native} = entry;
+  dependencies[names[names.length - 1]] = native;
+};
+
 // The installed registry packages of a lockfile that lack a `resolved` URL
 // or an `integrity`, by their key. npm fetches the registry's metadata to
 // fill such an entry in at install time, which an offline install cannot.
 const incompleteEntries = (lock) =>
-  Object.entries(lock.packages || {})
+  Object.entries(packageEntries(lock))
     .filter(([key, entry]) => {
       if (key === "" || !key.includes("node_modules/")) return false;
       if (entry.link || entry.inBundle) return false;
@@ -92,15 +118,15 @@ const nameOf = (key, entry) => entry.name || key.slice(key.lastIndexOf("node_mod
 const completeLock = (lock, dist) => {
   const keys = incompleteEntries(lock);
   for (const key of keys) {
-    const entry = lock.packages[key];
+    const entry = packageEntries(lock)[key];
     const found = dist(nameOf(key, entry), entry.version);
     const { version, resolved, integrity, ...rest } = entry;
-    lock.packages[key] = {
+    replacePackage(lock, key, {
       version,
       resolved: resolved || found.tarball,
       integrity: integrity || found.integrity,
       ...rest,
-    };
+    });
   }
   return keys;
 };
@@ -116,7 +142,7 @@ const registryDist = (name, version) =>
 // The git dependencies of a lockfile, by their `resolved`.
 const gitDependencies = (lock) => {
   const found = [];
-  for (const [key, entry] of Object.entries(lock.packages || {})) {
+  for (const [key, entry] of Object.entries(packageEntries(lock))) {
     if (key === "" || entry.link || !entry.resolved) continue;
     let spec;
     try {
@@ -347,7 +373,7 @@ const main = (root, purifierLockPath) => {
   if (completed.length > 0) {
     if (external) {
       for (const key of completed) {
-        const { resolved, integrity } = packageLock.packages[key];
+        const { resolved, integrity } = packageEntries(packageLock)[key];
         completions[key] = { resolved, integrity };
       }
     } else {
@@ -439,6 +465,7 @@ module.exports = {
   needsPreparation,
   incompleteEntries,
   completeLock,
+  packageEntries,
 };
 
 if (require.main === module) {

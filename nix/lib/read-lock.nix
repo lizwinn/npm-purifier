@@ -2,7 +2,7 @@
 #
 # readLock: the lock in memory of an npm project (CONTRACT.md of the
 # purifier library). It reads, at evaluation time, the package-lock.json
-# (lockfileVersion 2 or 3) of the project in `src` and, when that needs
+# (lockfileVersion 1, 2 or 3) of the project in `src` and, when that needs
 # it, the npm-purifier.lock.json that `npm-purifier lock` writes. That file
 # records the git dependencies. When it lies outside `src`, it also holds
 # `completions`: the URL and integrity of the entries of package-lock.json
@@ -106,6 +106,30 @@ let
         );
       };
 
+  # npm 5/6 records its installed tree recursively rather than as paths.
+  # Normalize it in memory only; the selected npm still reads its original
+  # lockfile and performs its own native resolution/install.
+  legacyPackages =
+    prefix: dependencies:
+    lib.concatMap (
+      name:
+      let
+        entry = dependencies.${name};
+        key = prefix + "node_modules/" + name;
+        normalized =
+          entry
+          // {
+            inherit name;
+            inBundle = entry.bundled or false;
+          }
+          // lib.optionalAttrs (
+            !(entry ? resolved)
+            && (lib.hasPrefix "file:" (entry.version or "") || lib.hasPrefix "git+" (entry.version or ""))
+          ) { resolved = entry.version; };
+      in
+      [ (lib.nameValuePair key normalized) ] ++ legacyPackages (key + "/") (entry.dependencies or { })
+    ) (builtins.attrNames dependencies);
+
   # The `packages` of a package-lock.json.
   packagesOf =
     name: read:
@@ -114,15 +138,29 @@ let
     in
     if read ? problem then
       read
-    else if version >= 2 then
+    else if
+      builtins.elem version [
+        2
+        3
+      ]
+    then
       { value = read.value.packages; }
+    else if version == 1 then
+      { value = lib.listToAttrs (legacyPackages "" (read.value.dependencies or { })); }
     else
-      problemOf "${name} is lockfileVersion ${toString version}; run `npm install` with npm 7 or newer to write lockfileVersion 3.";
+      problemOf "${name} is unsupported lockfileVersion ${toString version}; this reader supports versions 1, 2 and 3.";
 
   root = packagesOf (toString packageLock) (
     readLockFile packageLock "run `npm install` to write it again"
   );
-  packages = root.value or { };
+  manifest = src + lib.optionalString (projectDir != "") "/${projectDir}" + "/package.json";
+  packages =
+    (root.value or { })
+    // lib.optionalAttrs (
+      !(root ? problem)
+      && ((lib.importJSON packageLock).lockfileVersion or 1) == 1
+      && builtins.pathExists manifest
+    ) { "" = lib.importJSON manifest; };
 
   # A key under node_modules/ is an installed package; any other key is a
   # package of the project itself ("" for the root, a directory for a

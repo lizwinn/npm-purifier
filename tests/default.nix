@@ -448,9 +448,18 @@ in
   # names the problem: one older than npm 7, a source that is neither a
   # tarball URL, a repository nor a path, and a tarball without an
   # integrity.
-  old-lockfile = evalCheck "old-lockfile" (refused (
-    lockOf "old"
-  )) "a lockfileVersion 1 lockfile evaluated";
+  old-lockfile = evalCheck "old-lockfile" (
+    (lockOf "old").problems == [ ]
+  ) "a lockfileVersion 1 lockfile was rejected";
+  legacy-lock-tree =
+    let
+      lock = npm-purifier.readLock { src = ./fixtures/legacy-node; };
+    in
+    evalCheck "legacy-lock-tree" (
+      lock.problems == [ ]
+      && builtins.length lock.entries == 3
+      && lock.outputs.legacy-npm-app.version == "1.0.0"
+    ) "nested npm 6 dependencies or root manifest outputs were lost";
   unknown-source = evalCheck "unknown-source" (refused (
     lockOf "unknown-source"
   )) "a dependency from ftp evaluated";
@@ -496,4 +505,11 @@ in
         ${pkgs.testers.testBuildFailure made}/testBuildFailure.log
       touch $out
     '';
+}
+// lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+  legacy-node = import ./legacy-node.nix { inherit pkgs buildNpmProject; };
+  legacy-node-tools = import ./legacy-tools.nix {
+    inherit pkgs;
+    scope = withOverlay.npm-purifier;
+  };
 }

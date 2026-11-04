@@ -37,7 +37,7 @@
 #                     fetches: the locked tarballs and the git dependencies
 #   cache             the content of npm's cache: every locked tarball, and
 #                     the archives of git dependencies
-#   productionModules the production dependencies (`npm ci --omit=dev`)
+#   productionModules the production dependencies (`npm ci --production`)
 #   interactive       what `npm-purifier prefetch` builds for the `npm`
 #                     wrapper
 {
@@ -87,6 +87,8 @@
   # packages' commands run on. Git dependencies with a prepare script need
   # the Node.js of nixpkgs, whose npm prepares them inside the sandbox.
   node ? nodejs,
+  # Host graph tooling, independent of the selected project runtime.
+  captureNode ? nodejs,
   # The package scripts that build the project, run in order before the
   # packages are packed. A script the root package defines runs at the
   # root; otherwise it runs in each workspace that defines it.
@@ -145,13 +147,33 @@ let
   completedPackageLock =
     let
       read = lib.importJSON packageLock;
+      completeLegacy =
+        prefix: dependencies:
+        lib.mapAttrs (
+          name: entry:
+          let
+            key = prefix + "node_modules/" + name;
+          in
+          entry
+          // (completions.${key} or { })
+          // lib.optionalAttrs (entry ? dependencies) {
+            dependencies = completeLegacy (key + "/") entry.dependencies;
+          }
+        ) dependencies;
     in
     writeText "package-lock.json" (
       builtins.toJSON (
         read
-        // {
-          packages = lib.mapAttrs (key: entry: entry // completions.${key} or { }) read.packages;
-        }
+        // (
+          if (read.lockfileVersion or 1) == 1 then
+            {
+              dependencies = completeLegacy "" (read.dependencies or { });
+            }
+          else
+            {
+              packages = lib.mapAttrs (key: entry: entry // completions.${key} or { }) read.packages;
+            }
+        )
       )
     );
 
@@ -294,7 +316,7 @@ let
       if [ "$#" -gt 0 ]; then
         extra=(-- "$@")
       fi
-      if node -e 'process.exit(require("./package.json").scripts?.[process.argv[1]] ? 0 : 1)' "$script"; then
+      if node -e 'var scripts = require("./package.json").scripts; process.exit(scripts && scripts[process.argv[1]] ? 0 : 1)' "$script"; then
         npm run "$script" "''${extra[@]}"
       elif node -e 'process.exit(require("./package.json").workspaces ? 0 : 1)'; then
         npm run "$script" --workspaces --if-present "''${extra[@]}"
@@ -334,15 +356,20 @@ let
       runHook preInstall
       mkdir -p "$out"
       ${lib.concatMapStrings (p: ''
-        packdir="$(mktemp -d)"
-        npm pack --pack-destination "$packdir" ${
-          lib.optionalString (p.dir != "") (lib.escapeShellArg "./${p.dir}")
-        } > /dev/null
-        mv "$packdir"/*.tgz "$out"/${lib.escapeShellArg (tarballName p)}
+        (
+          cd ${lib.escapeShellArg (if p.dir == "" then "." else "./${p.dir}")}
+          # npm 6 predates --pack-destination. Pack in the package directory
+          # with the selected native npm, retaining its lifecycle semantics.
+          packed="$(npm pack | tail -n 1)"
+          test "$(basename "$packed")" = "$packed"
+          test -f "$packed"
+          mv "$packed" "$out"/${lib.escapeShellArg (tarballName p)}
+        )
       '') ownPackages}
-      export NPM_PURIFIER_NPM_MODULES=${node}/lib/node_modules/npm/node_modules
+      export NPM_PURIFIER_NPM_MODULES=${captureNode}/lib/node_modules/npm/node_modules
+      export NPM_PURIFIER_TARGET_NODE=${node}/bin/node
       export NPM_PROJECTION_NIX=${nix}/bin/nix
-      node ${lib.purifier.npmCaptureTool} "$PWD" "$out" "$graph" \
+      ${captureNode}/bin/node ${lib.purifier.npmCaptureTool} "$PWD" "$out" "$graph" \
         ${writeText "npm-projection-packages.json" (builtins.toJSON ownPackages)}
       runHook postInstall
     '';
@@ -388,7 +415,7 @@ let
       runHook preBuild
       ${npmSetup}
       ${npmInstall [
-        "--omit=dev"
+        "--production"
       ]}
       runHook postBuild
     '';
