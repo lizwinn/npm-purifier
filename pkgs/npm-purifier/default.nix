@@ -127,7 +127,7 @@ writeShellApplication {
       in
       import $flake/nix/lib/project.nix {
         inherit (f) lib;
-        node = builtins.storePath \"${nodejs}\";
+        node = ${(import ../../nix/lib/sdk-expression.nix nodejs).shell};
         pkgs = import f.inputs.nixpkgs {
           system = \"$system\";
           overlays = [ f.overlays.default ];

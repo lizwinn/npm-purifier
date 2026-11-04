@@ -162,6 +162,10 @@ lockfiles cannot be used, which is the same shape every purifier returns.
 
 ### Toolchain versions
 
+Native command packages retain the SDK recipe needed for later Nix evaluation.
+Tests check ordinary cache copying, selected outputs and evaluation without IFD;
+the SDK's arbitrary package passthru attributes are not reconstructed.
+
 `buildNpmProject { src = ./.; node = projectNode; captureNode = helperNode; }`
 selects the project's Node.js and its bundled native npm independently of the
 modern graph inspector. `projectNode` and `helperNode` are caller-provided Nix

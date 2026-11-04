@@ -78,3 +78,7 @@ jobs:
           tools="$(nix build --no-link --print-out-paths ".#checks.$system.legacy-node-tools")"
           release="$(nix build --no-link --print-out-paths ".#checks.$system.legacy-node.release")"
           python3 tests/legacy-native.py "$tools" "$release/legacy-npm-app.tgz"
+      - name: SDK context without import from derivation
+        run: nix eval --impure --option allow-import-from-derivation false --json --expr 'import ./tests/sdk-context.nix {}'
+      - name: SDK recipe survives ordinary store copy
+        run: python3 tests/sdk-portable.py
