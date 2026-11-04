@@ -358,6 +358,30 @@ const main = (root, purifierLockPath) => {
     const where = external ? purifierLockPath : "package-lock.json";
     process.stderr.write(`npm-purifier: recorded the tarball URL and integrity of ${shown}${more} in ${where}\n`);
   }
+  // Nix pins these archives. Retaining their native records would put
+  // platform-specific versions, store paths and hashes in the saved lock.
+  // The native binding reconstructs them when npm builds its ideal tree.
+  if (!external && process.env.NPM_PURIFIER_INPUT_VIEWS) {
+    const supplied = new Map();
+    for (const view of readJson(process.env.NPM_PURIFIER_INPUT_VIEWS)) {
+      for (const entry of readJson(view.catalog).modules) {
+        supplied.set(entry.name + "@" + entry.version, {
+          ...entry,
+          archive: path.resolve(view.repository, entry.archive),
+        });
+      }
+    }
+    for (const [location, entry] of Object.entries(packageLock.packages || {})) {
+      if (!location.includes("node_modules/") || entry.link || entry.inBundle) continue;
+      const name = entry.name || location.split("node_modules/").pop();
+      const provided = supplied.get(name + "@" + entry.version);
+      if (provided && entry.integrity === provided.integrity && entry.resolved?.startsWith("file:") &&
+          npa.resolve(name, entry.resolved, root).fetchSpec === provided.archive) {
+        delete packageLock.packages[location];
+      }
+    }
+    fs.writeFileSync(packageLockPath, JSON.stringify(packageLock, null, 2) + "\n");
+  }
   const packageLockText = fs.readFileSync(packageLockPath);
   // A git dependency names its commit, so an entry made for the same
   // `resolved` still holds; the run reuses it rather than fetching again.

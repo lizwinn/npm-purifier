@@ -81,7 +81,8 @@ npm ci
 ```
 
 The purifier pins the producer's Nix source identity. Supplied packages
-come from its repository, without duplicate download entries. Their Nix
+come from its repository and stay out of `package-lock.json`; npm reconstructs
+their native records from the pinned inputs when needed. Their Nix
 identities take precedence over ordinary version constraints; your
 `package.json` stays unchanged. `npm-purifier update` refreshes the inputs.
 
